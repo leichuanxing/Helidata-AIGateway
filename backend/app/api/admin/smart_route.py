@@ -4,7 +4,7 @@ from time import monotonic
 from datetime import datetime,timedelta,timezone
 from fastapi import APIRouter,Depends,Query,Request
 from pydantic import BaseModel,Field,ConfigDict,model_validator,StrictInt
-from sqlalchemy import select,delete,update,func,case
+from sqlalchemy import select,delete,update,func,case,or_
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_session
 from app.core.dependencies import administrator
@@ -18,7 +18,7 @@ from app.services.model_catalog import candidates
 from app.services.sessions import audit
 from app.providers.operations import compatible
 
-router=APIRouter(prefix='/api/admin/smart-route',tags=['智能路由'])
+router=APIRouter(prefix='/api/admin/smart-route',tags=['智能模型选择'])
 
 
 def public(row):
@@ -32,7 +32,7 @@ async def config(db,ident,lock=False):
     return row
 
 
-async def real_members(db,group_id):
+async def real_members(db,group_id,operation=None):
     group=await db.get(ModelGroup,group_id)
     if not group or group.status!='enabled':raise APIError(400,'ROUTE_GROUP_INVALID','路由目标模型组必须启用')
     members=(await db.execute(select(ModelGroupModel,LogicalModel).join(LogicalModel,LogicalModel.name==ModelGroupModel.logical_model)
@@ -43,7 +43,7 @@ async def real_members(db,group_id):
     usable=[]
     for member,model in members:
         if model.model_type in ('text','reasoning','multimodal'):
-            if any(compatible('chat',provider) for mapping,provider in await candidates(db,model.name)):
+            if any(compatible(op,provider) for mapping,provider in await candidates(db,model.name) for op in ((operation,) if operation and operation!='preflight' else ('chat','messages','responses'))):
                 usable.append(model.name)
     if not usable:raise APIError(400,'ROUTE_GROUP_EMPTY','目标模型组需要可用的文本模型映射')
     return group,usable
@@ -100,28 +100,49 @@ class PreviewInput(BaseModel):
 
 @router.post('/configs/{ident}/preview')
 async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
+    from app.services.admin_embedding import embedding
+    from app.services.route_vectors import nearest,classify,exact_match,normalize_prompt
+    from app.core.database import session_factory
+    from app.gateway.request_id import generate
+    import anyio
     cfg=await config(db,ident);started=monotonic()
     fields=('embedding_model','vector_generation','simple_model_group','complex_model_group','top_k','similarity_threshold','confidence_gap','fallback','status')
-    snapshot={key:getattr(cfg,key) for key in fields}
-    for group_id in (cfg.simple_model_group,cfg.complex_model_group):await real_members(db,group_id)
-    await db.commit()
-    from app.services.admin_embedding import embedding
-    from app.services.route_vectors import nearest,classify
-    vector,request_id=await embedding(actor.id,snapshot['embedding_model'],body.prompt,request.client.host)
-    cfg=await db.scalar(select(RouteConfig).where(RouteConfig.id==ident).execution_options(populate_existing=True))
-    if not cfg or any(getattr(cfg,key)!=value for key,value in snapshot.items()):
-        raise APIError(409,'ROUTE_CHANGED','预览期间路由配置已变化，请重试')
-    evidence=await nearest(db,cfg,vector);choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
-    classification=choice.classification;status='classified' if classification else 'failed'
-    if classification is None and cfg.fallback!='error':classification=cfg.fallback;status='fallback'
-    group_id=None;group_name=None;models=[]
-    if classification:
-        group_id=cfg.simple_model_group if classification=='simple' else cfg.complex_model_group
-        group,models=await real_members(db,group_id);group_name=group.name
-    return {'data':{'status':status,'classification':classification,'similarity':choice.similarity,'reason':choice.reason,
-        'selected_model_group':group_id,'selected_group_name':group_name,'candidate_models':models,'evidence':evidence,
-        'top_k':cfg.top_k,'elapsed_ms':round((monotonic()-started)*1000,2),'embedding_request_id':request_id,
-        'virtual_model':cfg.virtual_model,'preview':True}}
+    snapshot={key:getattr(cfg,key) for key in fields};virtual_model=cfg.virtual_model
+    text=normalize_prompt(body.prompt);source='vector';embedding_id=None;evidence=[];choice=None
+    classification=None;status='failed';reason=None;group_id=None;group_name=None;models=[]
+    try:
+        evidence=await exact_match(db,cfg,text)
+        if evidence:source='local_rule'
+        else:
+            await db.commit();embedding_id=generate()
+            vector,_=await embedding(actor.id,snapshot['embedding_model'],text,request.client.host,request_id=embedding_id)
+            cfg=await db.scalar(select(RouteConfig).where(RouteConfig.id==ident).execution_options(populate_existing=True))
+            if not cfg or any(getattr(cfg,key)!=value for key,value in snapshot.items()):
+                raise APIError(409,'ROUTE_CHANGED','预览期间模型选择配置已变化，请重试')
+            evidence=await nearest(db,cfg,vector)
+        choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
+        classification=choice.classification;reason=choice.reason;status='classified' if classification else 'failed'
+        if classification is None and cfg.fallback!='error':classification=cfg.fallback;status='fallback';source='fallback'
+        if classification:
+            group_id=cfg.simple_model_group if classification=='simple' else cfg.complex_model_group
+            group,models=await real_members(db,group_id,'chat');group_name=group.name
+        return {'data':{'status':status,'classification':classification,'similarity':choice.similarity,'confidence':choice.confidence,
+            'reason':reason,'source':source,'normalized_text':text,'request_kind':'preview',
+            'selected_model_group':group_id,'selected_group_name':group_name,'selected_model':models[0] if models else None,
+            'candidate_models':models,'evidence':evidence,'top_k':cfg.top_k,'elapsed_ms':round((monotonic()-started)*1000,2),
+            'embedding_request_id':embedding_id,'virtual_model':virtual_model,'preview':True,'request_id':request.state.request_id}}
+    except BaseException as error:
+        status='failed';reason=error.detail['code'] if isinstance(error,APIError) else 'ROUTE_PREVIEW_INTERRUPTED'
+        raise
+    finally:
+        if db.in_transaction():db.expunge_all();await db.rollback()
+        with anyio.CancelScope(shield=True):
+            async with session_factory.begin() as history:
+                history.add(RouteDecision(request_id=request.state.request_id,config_id=ident,virtual_model=virtual_model,
+                    embedding_request_id=embedding_id,top_k=snapshot['top_k'],source=source,request_kind='preview',normalized_text=text,
+                    classification=classification,similarity=choice.similarity if choice else None,confidence=choice.confidence if choice else None,
+                    selected_model_group=group_id,selected_group_name=group_name,selected_model=models[0] if models else None,
+                    status=status,reason=reason,evidence=evidence,elapsed_ms=round((monotonic()-started)*1000,2)))
 
 
 @router.put('/configs/{ident}')
@@ -142,9 +163,12 @@ async def remove(ident:int,request:Request,actor=Depends(administrator),db=Depen
 
 @router.get('/samples')
 async def samples(config_id:int,actor=Depends(administrator),db=Depends(get_session),page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),
-                  vector_status:str|None=Query(None,pattern='^(not_built|pending|processing|ready|failed|stale)$')):
+                  vector_status:str|None=Query(None,pattern='^(not_built|pending|processing|ready|failed|stale)$'),
+                  classification:str|None=Query(None,pattern='^(simple|complex)$'),q:str=Query('',max_length=200)):
     cfg=await config(db,config_id)
     query=select(RouteSample).where(RouteSample.config_id==config_id)
+    if classification:query=query.where(RouteSample.classification==classification)
+    if q:query=query.where(or_(RouteSample.prompt.icontains(q,autoescape=True),RouteSample.remark.icontains(q,autoescape=True)))
     if vector_status=='not_built':query=query.where(RouteSample.vector_status=='pending',RouteSample.vector_requested.is_(False))
     elif vector_status:
         query=query.where(RouteSample.vector_status==vector_status)
@@ -261,15 +285,30 @@ def period(start,end):
     return start,end
 
 
+def decision_query():
+    return select(RouteDecision,CallLog.operation,CallLog.logical_model.label('actual_model'),CallLog.upstream_model,
+        CallLog.total_tokens,CallLog.status.label('call_status')).outerjoin(CallLog,CallLog.request_id==RouteDecision.request_id)
+
+
+def decision_row(row,detail=False):
+    value=public(row[0])
+    if not detail:
+        value.pop('evidence',None);text=value.pop('normalized_text',None);value['text_excerpt']=text[:200] if text else None
+    value.update(operation=row.operation,selected_model=row.actual_model or row[0].selected_model,
+        upstream_model=row.upstream_model,total_tokens=row.total_tokens,call_status=row.call_status)
+    return value
+
+
 @router.get('/logs')
 async def logs(actor=Depends(administrator),db=Depends(get_session),request_id:str|None=Query(None,max_length=80),
                virtual_model:str|None=Query(None,max_length=100),start:datetime|None=None,end:datetime|None=None,
                classification:str|None=Query(None,pattern='^(simple|complex|unclassified)$'),
                status:str|None=Query(None,pattern='^(classified|fallback|failed)$'),
                operation:str|None=Query(None,max_length=20),selected_model:str|None=Query(None,max_length=100),
+               source:str|None=Query(None,pattern='^(vector|local_rule|fallback|error|legacy)$'),
+               request_kind:str|None=Query(None,pattern='^(real|preview)$'),q:str=Query('',max_length=200),
                page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100)):
-    query=select(RouteDecision,CallLog.operation,CallLog.logical_model,CallLog.upstream_model,CallLog.total_tokens,
-                 CallLog.status.label('call_status')).outerjoin(CallLog,CallLog.request_id==RouteDecision.request_id)
+    query=decision_query()
     if request_id:query=query.where(RouteDecision.request_id==request_id)
     else:
         start,end=period(start,end);query=query.where(RouteDecision.created_at>=start,RouteDecision.created_at<end)
@@ -278,39 +317,48 @@ async def logs(actor=Depends(administrator),db=Depends(get_session),request_id:s
     elif classification:query=query.where(RouteDecision.classification==classification)
     if status:query=query.where(RouteDecision.status==status)
     if operation:query=query.where(CallLog.operation==operation)
-    if selected_model:query=query.where(CallLog.logical_model==selected_model)
+    if source:query=query.where(RouteDecision.source==source)
+    if request_kind:query=query.where(RouteDecision.request_kind==request_kind)
+    selected=func.coalesce(CallLog.logical_model,RouteDecision.selected_model)
+    if selected_model:query=query.where(selected==selected_model)
+    if q:query=query.where(or_(RouteDecision.request_id.icontains(q,autoescape=True),RouteDecision.virtual_model.icontains(q,autoescape=True),
+        selected.icontains(q,autoescape=True),RouteDecision.normalized_text.icontains(q,autoescape=True)))
     total=await db.scalar(select(func.count()).select_from(query.subquery()))
     rows=(await db.execute(query.order_by(RouteDecision.id.desc()).offset((page-1)*page_size).limit(page_size))).all()
-    return {'data':{'items':[{**public(row[0]),'operation':row.operation,'selected_model':row.logical_model,
-        'upstream_model':row.upstream_model,'total_tokens':row.total_tokens,'call_status':row.call_status} for row in rows],'total':total}}
+    return {'data':{'items':[decision_row(row) for row in rows],'total':total}}
+
+
+@router.get('/logs/{ident}')
+async def log_detail(ident:int,actor=Depends(administrator),db=Depends(get_session)):
+    row=(await db.execute(decision_query().where(RouteDecision.id==ident))).first()
+    if not row:raise APIError(404,'ROUTE_DECISION_NOT_FOUND','模型选择决策不存在')
+    return {'data':decision_row(row,True)}
 
 
 @router.get('/statistics')
 async def statistics(actor=Depends(administrator),db=Depends(get_session),start:datetime|None=None,end:datetime|None=None,virtual_model:str|None=Query(None,max_length=100)):
     start,end=period(start,end)
-    query=select(RouteDecision.classification,RouteDecision.status,RouteDecision.selected_model_group,RouteDecision.selected_group_name,
-                 func.count().label('requests'),func.avg(RouteDecision.elapsed_ms).label('elapsed_ms'),func.avg(RouteDecision.similarity).label('similarity'),
-                 func.sum(CallLog.total_tokens).label('total_tokens'),func.count(CallLog.total_tokens).label('usage_count'))
-    query=query.outerjoin(CallLog,CallLog.request_id==RouteDecision.request_id).where(RouteDecision.created_at>=start,RouteDecision.created_at<end)
-    if virtual_model:query=query.where(RouteDecision.virtual_model==virtual_model)
-    rows=(await db.execute(query.group_by(RouteDecision.classification,RouteDecision.status,RouteDecision.selected_model_group,RouteDecision.selected_group_name))).mappings().all()
     filters=[RouteDecision.created_at>=start,RouteDecision.created_at<end]
     if virtual_model:filters.append(RouteDecision.virtual_model==virtual_model)
     def joined(statement):
         return statement.select_from(RouteDecision).outerjoin(CallLog,CallLog.request_id==RouteDecision.request_id).where(*filters)
-    overview=(await db.execute(joined(select(func.count().label('decisions'),func.count(CallLog.id).label('real_requests'),
-        func.count().filter(RouteDecision.status=='failed').label('failures'),
-        func.sum(CallLog.total_tokens).label('total_tokens'),func.avg(CallLog.total_tokens).label('average_tokens'),
-        func.count(CallLog.total_tokens).label('usage_count'),func.sum(RouteDecision.elapsed_ms).label('elapsed_ms'))))).mappings().one()
+    failed=or_(RouteDecision.status=='failed',CallLog.status=='failure')
+    def metrics():return [func.count().label('decisions'),func.count().filter(RouteDecision.request_kind=='real').label('real_requests'),
+        func.count().filter(RouteDecision.request_kind=='preview').label('previews'),func.count().filter(failed).label('failures'),
+        func.count(CallLog.total_tokens).label('usage_count'),func.sum(CallLog.total_tokens).label('total_tokens'),
+        func.avg(CallLog.total_tokens).label('average_tokens'),func.sum(RouteDecision.elapsed_ms).label('elapsed_ms')]
+    overview=(await db.execute(joined(select(*metrics())))).mappings().one()
+    dimensions=(RouteDecision.classification,RouteDecision.status,RouteDecision.selected_model_group,RouteDecision.selected_group_name)
+    rows=(await db.execute(joined(select(*dimensions,func.count().label('requests'),func.avg(RouteDecision.elapsed_ms).label('elapsed_ms'),
+        func.avg(RouteDecision.similarity).label('similarity'),func.sum(CallLog.total_tokens).label('total_tokens'),func.count(CallLog.total_tokens).label('usage_count')))
+        .group_by(*dimensions))).mappings().all()
     async def distribution(dimension):
-        statement=joined(select(dimension.label('name'),func.count().label('decisions'),
-            func.count(CallLog.id).label('real_requests'),func.count(CallLog.total_tokens).label('usage_count'),
-            func.sum(CallLog.total_tokens).label('total_tokens'))).group_by(dimension).order_by(func.count().desc(),dimension)
+        statement=joined(select(dimension.label('name'),*metrics())).group_by(dimension).order_by(func.count().desc(),dimension)
         return [dict(row) for row in (await db.execute(statement)).mappings().all()]
     token_band=case((CallLog.total_tokens.is_(None),'unknown'),(CallLog.total_tokens<1000,'0-999'),
         (CallLog.total_tokens<10000,'1000-9999'),else_='10000+')
-    distributions={'classification':await distribution(RouteDecision.classification),
-        'model':await distribution(CallLog.logical_model),'tokens':await distribution(token_band)}
+    distributions={'classification':await distribution(RouteDecision.classification),'source':await distribution(RouteDecision.source),
+        'model':await distribution(func.coalesce(CallLog.logical_model,RouteDecision.selected_model)),'tokens':await distribution(token_band)}
     return {'data':{'start':start,'end':end,'items':[dict(row) for row in rows],'summary':dict(overview),
         'distributions':distributions,'token_scope':'仅父推理请求；Embedding子调用在独立用量中统计',
-        'metric_scope':'真实请求数为已关联调用日志数；失败数为决策失败数；累计耗时为决策耗时；平均Token只计算已上报用量'}}
+        'metric_scope':'真实请求与预览分别计数；失败包含决策失败或实际调用失败（不重复）；Token仅统计父推理已上报用量；累计耗时为决策耗时'}}

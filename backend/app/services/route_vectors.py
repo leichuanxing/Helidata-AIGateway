@@ -5,10 +5,11 @@ sample management will use these primitives in the Stage16 application layer.
 """
 import json
 import math
+import unicodedata
 from dataclasses import dataclass
 from sqlalchemy import select, text
 from app.core.exceptions import APIError
-from app.models.routing import RouteConfig, RouteSample
+from app.models.routing import RouteConfig, RouteSample,RouteVector
 
 
 def encode_vector(value):
@@ -35,7 +36,7 @@ def encode_vector(value):
 async def nearest(db, config, vector):
     encoded, dimensions = encode_vector(vector)
     rows = (await db.execute(text('''
-        SELECT s.id AS sample_id, s.classification, s.similarity_threshold,
+        SELECT s.id AS sample_id, s.classification, s.similarity_threshold, left(s.prompt,2048) AS sample_text,
                CASE WHEN v.dimensions=:dimensions THEN
                    1 - (v.embedding <=> CAST(:embedding AS vector))
                END AS similarity
@@ -52,8 +53,24 @@ async def nearest(db, config, vector):
     if any(row['similarity'] is None or not math.isfinite(row['similarity']) for row in rows):
         raise APIError(502, 'ROUTE_INVALID_VECTOR', '样本向量无法计算有效相似度，请重新向量化')
     return [{'sample_id': row['sample_id'], 'classification': row['classification'],
+             'sample_text':row['sample_text'],'effective_threshold':row['similarity_threshold'] if row['similarity_threshold'] is not None else config.similarity_threshold,
              'similarity': max(-1.0, min(1.0, row['similarity'])),
              **({'similarity_threshold':row['similarity_threshold']} if row['similarity_threshold'] is not None else {})} for row in rows]
+
+
+def normalize_prompt(value):
+    return unicodedata.normalize('NFC',value.replace('\r\n','\n').replace('\r','\n')).strip()
+
+
+async def exact_match(db,config,prompt):
+    """Local rule: an exact, vectorized sample can classify without a network call."""
+    rows=(await db.execute(select(RouteSample).join(RouteVector,RouteVector.sample_id==RouteSample.id).where(
+        RouteSample.config_id==config.id,RouteSample.prompt==prompt,RouteSample.vector_status=='ready',
+        RouteSample.revision==RouteVector.sample_revision,RouteVector.vector_generation==config.vector_generation,
+        RouteVector.embedding_model==config.embedding_model).limit(1))).scalars().all()
+    return [{'sample_id':s.id,'classification':s.classification,'similarity':1.0,'sample_text':s.prompt[:2048],
+        'effective_threshold':s.similarity_threshold if s.similarity_threshold is not None else config.similarity_threshold,
+        **({'similarity_threshold':s.similarity_threshold} if s.similarity_threshold is not None else {})} for s in rows]
 
 
 async def store_vector(db, config_id, sample_id, generation, revision, embedding_model, vector):
@@ -107,7 +124,7 @@ even when an administrator chooses confidence_gap=0.
     best = evidence[0]
     opposite = max((item['similarity'] for item in evidence
                     if item['classification'] != best['classification']), default=0.0)
-    confidence = best['similarity'] - opposite
+    confidence = max(0.0,best['similarity'] - opposite)
     if best['similarity'] < (best.get('similarity_threshold') if best.get('similarity_threshold') is not None else threshold):
         return Classification(None, best['similarity'], confidence, 'ROUTE_LOW_SIMILARITY')
     if confidence <= 1e-7 or confidence < gap:

@@ -15,7 +15,7 @@ async def routes(db,ctx):
         if not cfg or cfg.status!='enabled' or cfg.virtual_model!=ctx.original_model or ctx.route_group_id not in (cfg.simple_model_group,cfg.complex_model_group):
             raise APIError(409,'ROUTE_CHANGED','路由规则已变化')
         await authorize(db,ctx,cfg)
-        group,names=await real_members(db,ctx.route_group_id)
+        group,names=await real_members(db,ctx.route_group_id,ctx.operation)
         result=[];incompatible=False
         for name in names:
             rows=list(await candidates(db,name))

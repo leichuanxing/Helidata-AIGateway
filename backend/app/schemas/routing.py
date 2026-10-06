@@ -40,7 +40,8 @@ class RouteSampleInput(BaseModel):
     @field_validator('prompt')
     @classmethod
     def prompt_text(cls, value):
-        value = value.strip()
+        from app.services.route_vectors import normalize_prompt
+        value = normalize_prompt(value)
         if not value or len(value.encode('utf-8')) > 262144:
             raise ValueError('Prompt is empty or exceeds the byte limit')
         if any(ord(char) < 32 and char not in '\n\r\t' for char in value) or '\x7f' in value:
@@ -68,8 +69,9 @@ numbers only. Raw prompt contents must never be included in errors or audits.
         raise APIError(400, 'ROUTE_CSV_INVALID', 'CSV必须为UTF-8编码') from None
     try:
         reader = csv.DictReader(io.StringIO(content), strict=True)
-        if reader.fieldnames is None or set(reader.fieldnames) != {'prompt', 'classification'} or len(reader.fieldnames) != 2:
-            raise APIError(400, 'ROUTE_CSV_INVALID', 'CSV表头必须为prompt,classification')
+        required={'prompt','classification'};allowed=required|{'similarity_threshold','remark'}
+        if reader.fieldnames is None or not required.issubset(reader.fieldnames) or not set(reader.fieldnames).issubset(allowed) or len(set(reader.fieldnames))!=len(reader.fieldnames):
+            raise APIError(400, 'ROUTE_CSV_INVALID', 'CSV需包含prompt,classification，可选similarity_threshold,remark')
         samples = []
         prompts = set()
         for row in reader:
@@ -78,6 +80,7 @@ numbers only. Raw prompt contents must never be included in errors or audits.
             if None in row or any(value is None for value in row.values()):
                 raise APIError(400, 'ROUTE_CSV_INVALID', f'CSV第{reader.line_num}行列数不正确')
             try:
+                if row.get('similarity_threshold')=='':row['similarity_threshold']=None
                 sample = RouteSampleInput.model_validate(row)
             except ValueError:
                 raise APIError(400, 'ROUTE_CSV_INVALID', f'CSV第{reader.line_num}行内容或类别无效') from None

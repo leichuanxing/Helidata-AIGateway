@@ -95,7 +95,7 @@ async def process(job):
         # Each durable job tries one account; explicit retry rebuilds a new version.
         ctx.mapping,ctx.provider=pairs[0];protocol_adapter.bind(ctx)
         entry={'provider_id':ctx.provider.id,'provider_name':ctx.provider.name,'logical_model':ctx.mapping.logical_model,
-               'upstream_model':ctx.mapping.upstream_model,'protocol':ctx.provider.protocol,'config_version':ctx.provider.config_version,
+               'upstream_model':ctx.mapping.upstream_model,'protocol':ctx.adapter.protocol_name,'config_version':ctx.provider.config_version,
                'status':'not_sent','code':None,'http_status':None,'elapsed_ms':None}
         ctx.attempts.append(entry)
         async with asyncio.timeout(120):

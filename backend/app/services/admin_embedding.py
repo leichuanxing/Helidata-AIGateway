@@ -13,8 +13,8 @@ from app.gateway import protocol_adapter,upstream,provider_health,call_log
 from app.providers.operations import compatible
 
 
-async def embedding(actor_id,model,text,client_ip):
-    ctx=GatewayContext(generate(),'embeddings',model,{'model':model,'input':text,'encoding_format':'float'},client_ip=client_ip)
+async def embedding(actor_id,model,text,client_ip,request_id=None):
+    ctx=GatewayContext(request_id or generate(),'embeddings',model,{'model':model,'input':text,'encoding_format':'float'},client_ip=client_ip)
     ctx.stages=['admin_route_preview'];ctx.deferred['smart_routing']='preview_embedding'
     outcome,code='failure',None
     try:
@@ -26,7 +26,7 @@ async def embedding(actor_id,model,text,client_ip):
         if not pairs:raise APIError(503,'ROUTE_EMBEDDING_UNAVAILABLE','Embedding模型无可用账号')
         ctx.mapping,ctx.provider=pairs[0];protocol_adapter.bind(ctx)
         ctx.attempts.append({'provider_id':ctx.provider.id,'provider_name':ctx.provider.name,'logical_model':model,
-            'upstream_model':ctx.mapping.upstream_model,'protocol':ctx.provider.protocol,'config_version':ctx.provider.config_version,
+            'upstream_model':ctx.mapping.upstream_model,'protocol':ctx.adapter.protocol_name,'config_version':ctx.provider.config_version,
             'status':'not_sent','code':None,'http_status':None,'elapsed_ms':None})
         async with asyncio.timeout(120):
             async with lease(ctx):

@@ -95,6 +95,10 @@ class RouteDecision(Base):
         CheckConstraint('top_k BETWEEN 1 AND 50', name='ck_route_decision_top_k'),
         CheckConstraint('similarity IS NULL OR similarity BETWEEN -1 AND 1', name='ck_route_decision_similarity'),
         CheckConstraint("elapsed_ms >= 0 AND elapsed_ms < 'Infinity'::double precision", name='ck_route_decision_elapsed'),
+        CheckConstraint("source IN ('legacy','vector','local_rule','fallback','error')",name='ck_route_decision_source'),
+        CheckConstraint("request_kind IN ('real','preview')",name='ck_route_decision_kind'),
+        CheckConstraint('confidence IS NULL OR (confidence >= 0 AND confidence <= 2)',name='ck_route_decision_confidence'),
+        CheckConstraint('normalized_text IS NULL OR length(normalized_text) <= 16000',name='ck_route_decision_text'),
         Index('ix_route_decisions_created_id', 'created_at', 'id'),
         Index('ix_route_decisions_virtual_created', 'virtual_model', 'created_at'),
     )
@@ -104,6 +108,11 @@ class RouteDecision(Base):
     config_id: Mapped[int] = mapped_column(Integer)
     virtual_model: Mapped[str] = mapped_column(String(100))
     embedding_request_id: Mapped[str | None] = mapped_column(String(80))
+    source: Mapped[str] = mapped_column(String(20),default='legacy',server_default='legacy')
+    request_kind: Mapped[str] = mapped_column(String(20),default='real',server_default='real')
+    normalized_text: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    selected_model: Mapped[str | None] = mapped_column(String(100))
     top_k: Mapped[int] = mapped_column(Integer)
     similarity: Mapped[float | None] = mapped_column(Float)
     classification: Mapped[str | None] = mapped_column(String(20))

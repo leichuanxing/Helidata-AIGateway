@@ -55,7 +55,7 @@ async def save(db,actor,request,body,row=None):
     if row and category not in (None,'text'):
         from app.models.routing import RouteConfig
         if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)):
-            raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本类型')
+            raise APIError(409,'MODEL_GROUP_IN_USE','智能模型选择引用的分组必须保持文本类型')
     action='update_model_group' if row else 'create_model_group'
     if row:
         for f,v in body.model_dump(exclude={'logical_models'}).items(): setattr(row,f,v)
@@ -89,7 +89,7 @@ async def remove(group_id: int,request: Request,actor=Depends(administrator),db=
     await config_lock(db);row=await target(db,group_id,True)
     from app.models.routing import RouteConfig
     if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==group_id)|(RouteConfig.complex_model_group==group_id)).limit(1)):
-        raise APIError(409,'MODEL_GROUP_IN_USE','模型组已被智能路由引用，请先修改路由配置')
+        raise APIError(409,'MODEL_GROUP_IN_USE','模型组已被智能模型选择引用，请先修改路由配置')
     if await db.scalar(select(UserGroupModelGroup.user_group_id).where(UserGroupModelGroup.model_group_id==group_id).limit(1)):
         raise APIError(409,'MODEL_GROUP_IN_USE','模型组已授权给用户组，请先取消关联')
     try:

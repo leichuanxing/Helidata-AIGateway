@@ -32,7 +32,8 @@ async def nonstream(request,ctx):
 async def execute(ctx):
     # Preflight performs zero network I/O or token consumption.
     if ctx.operation == 'preflight':
-        return {'model': ctx.original_model or ctx.logical_model, 'ready': True, 'inference_enabled': ctx.adapter.wire_protocol in ('openai','anthropic') and ctx.mapping.model_type in ('text', 'reasoning', 'multimodal'),
+        from app.providers.operations import compatible
+        return {'model': ctx.original_model or ctx.logical_model, 'ready': True, 'inference_enabled': compatible('chat',ctx.provider) and ctx.mapping.model_type in ('text', 'reasoning', 'multimodal'),
                 'deferred': ctx.deferred, 'quota':ctx.quota_status}
     if ctx.operation in INFERENCE:
         payload=prepare(ctx)
