@@ -24,7 +24,7 @@ onUnmounted(()=>{generation++;clearInterval(timer)})
 </script>
 <template>
  <h1>{{backup?'数据备份':'管理审计'}}</h1>
- <p class="muted">{{backup?'备份数据库、系统配置、Master Key及上传文件到 /data/backup/manual。备份文件含密钥，请妥善保管。':'记录登录及用户、账号池、模型组、API Key、合规与备份操作。保留操作时身份快照，审计记录不提供删除入口。'}}</p>
+ <p class="muted">{{backup?'备份数据库、系统配置、Master Key及上传文件到 /data/backup/manual。备份文件含密钥，请妥善保管。':'记录登录及用户、模型供应商、模型组、API Key、合规与备份操作。保留操作时身份快照，审计记录不提供删除入口。'}}</p>
  <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
  <div class="toolbar">
   <template v-if="backup"><el-button type="primary" :loading="creating" @click="create">创建手动备份</el-button><span class="muted">一次仅执行一个任务；已有升级前SQL备份保留在原目录。</span></template>

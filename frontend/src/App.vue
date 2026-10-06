@@ -14,7 +14,7 @@ const links=computed(()=>portalMode.value?[
   {to:'/portal/usage',label:'用量统计',icon:'chart'}
 ]:[
   {to:'/admin/dashboard',label:'概览',icon:'dashboard'},
-  {to:'/admin/providers',label:'账号池',icon:'users'},
+  {to:'/admin/providers',label:'模型供应商',icon:'users'},
   {to:'/admin/model-groups',label:'模型组',icon:'route'},
   {to:'/admin/users',label:'用户',icon:'users'},
   {to:'/admin/user-groups',label:'用户组',icon:'users'},
