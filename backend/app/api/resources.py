@@ -33,7 +33,8 @@ async def resources(actor=Depends(administrator)):
 
 @router.get('/api/portal/quota')
 async def own_quota(user=Depends(active_user),db=Depends(get_session)):
-    group=await db.get(UserGroup,user.user_group_id) if user.user_group_id else None
+    from app.services.group_access import resolve_group
+    group=await resolve_group(db,user.user_group_id)
     if not group or group.status!='enabled':raise APIError(403,'GROUP_DISABLED','用户组不可用')
     await db.commit()
     return {'data':await snapshot(group)}

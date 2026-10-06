@@ -27,6 +27,7 @@ class WordInput(SourceInput):
 class SampleInput(SourceInput):
  text:str=Field(min_length=1,max_length=2000)
  build_vector:bool=False
+ consent:bool=False
 class PolicyInput(Input):
  name:str=Field(min_length=1,max_length=80)
  action:Literal['audit','block']='audit'
@@ -143,18 +144,20 @@ async def build_samples(body:BuildInput,request:Request,actor=Depends(administra
  return {'data':{'queued':queued,'total':len(records)}}
 @router.post('/samples')
 async def add_sample(body:SampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
+ if body.build_vector and version().startswith('upstream:') and not body.consent:raise APIError(400,'VECTOR_CONSENT_REQUIRED','构建上游向量可能产生费用，请明确确认')
  await lock(db);await limit(db,AuditSample,500)
- r=AuditSample(**body.model_dump(exclude={'build_vector','policy_id'}),text_hash=hashlib.sha256(body.text.encode()).hexdigest(),vector_status='pending' if body.build_vector else 'not_built')
+ r=AuditSample(**body.model_dump(exclude={'build_vector','policy_id','consent'}),text_hash=hashlib.sha256(body.text.encode()).hexdigest(),vector_status='pending' if body.build_vector else 'not_built')
  db.add(r)
  try:await assign(db,r,body.policy_id,'sample_ids')
  except IntegrityError:await db.rollback();raise APIError(409,'COMPLIANCE_DUPLICATE','样本文本重复') from None
  return await finish(db,r,actor,request,'create_audit_sample')
 @router.put('/samples/{ident}')
 async def edit_sample(ident:int,body:SampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
+ if body.build_vector and version().startswith('upstream:') and not body.consent:raise APIError(400,'VECTOR_CONSENT_REQUIRED','构建上游向量可能产生费用，请明确确认')
  await lock(db);r=await db.scalar(select(AuditSample).where(AuditSample.id==ident).with_for_update())
  if not r:raise APIError(404,'COMPLIANCE_NOT_FOUND','审核样本不存在')
  changed=r.text!=body.text
- for k,v in body.model_dump(exclude={'policy_id','build_vector'}).items():setattr(r,k,v)
+ for k,v in body.model_dump(exclude={'policy_id','build_vector','consent'}).items():setattr(r,k,v)
  if changed or body.build_vector:
   r.text_hash=hashlib.sha256(body.text.encode()).hexdigest();r.revision+=1;r.vector_status='pending' if body.build_vector else 'not_built';r.vector_error=None;r.job_started_at=None
  if 'policy_id' in body.model_fields_set:

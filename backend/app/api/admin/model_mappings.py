@@ -108,7 +108,8 @@ async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Requ
     category_mapping(account,body)
     from app.services.provider_rules import protect_vector_mapping
     protect_vector_mapping(account,row,body)
-    if body.logical_model!=row.logical_model:await protect_removed(db,account,{row.logical_model})
+    if body.logical_model!=row.logical_model or row.status=='enabled' and body.status!='enabled':
+        await protect_removed(db,account,{row.logical_model})
     if account.default_test_model==row.logical_model:
         account.default_test_model=body.logical_model if body.status=='enabled' else None
     for f,v in body.model_dump().items(): setattr(row,f,v)

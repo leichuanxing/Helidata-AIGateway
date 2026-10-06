@@ -52,10 +52,14 @@ async def save(db,actor,request,body,row=None):
             raise APIError(409,'MODEL_GROUP_TYPE_CONFLICT','模型与分组协议类型不一致')
         for name in names:
             if name not in found:db.add(LogicalModel(name=name,model_type={'text':'text','image':'image','vector':'embedding'}[category]))
-    if row and category not in (None,'text'):
+    if row:
         from app.models.routing import RouteConfig
         if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)):
-            raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本类型')
+            if category not in (None,'text'):
+                raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本类型')
+            virtual=set((await db.scalars(select(RouteConfig.virtual_model))).all())
+            if virtual.intersection(names):
+                raise APIError(409,'ROUTE_RECURSION','路由目标模型组不能加入虚拟路由模型')
     action='update_model_group' if row else 'create_model_group'
     if row:
         for f,v in body.model_dump(exclude={'logical_models'}).items(): setattr(row,f,v)

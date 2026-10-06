@@ -78,7 +78,8 @@ async def sync_mappings(db,row,submitted):
     from app.services.provider_rules import protect_vector_mapping
     for name,item in wanted.items():
         if name in previous:protect_vector_mapping(row,previous[name],item)
-    await protect_removed(db,row,set(previous)-set(wanted))
+    disabled={name for name,item in wanted.items() if name in previous and previous[name].status=='enabled' and item.status!='enabled'}
+    await protect_removed(db,row,(set(previous)-set(wanted))|disabled)
     for name,mapping in previous.items():
         if name not in wanted:mapping.deleted_at=now();mapping.status='disabled'
     await db.flush()
@@ -170,7 +171,7 @@ async def create(body: ProviderCreate,request: Request,actor=Depends(administrat
 @router.patch('/{provider_id}')
 async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     from app.api.admin.model_mappings import config_lock
-    if body.model_mappings is not None:await config_lock(db)
+    await config_lock(db)
     row=await target(db,provider_id,True)
     if body.expected_config_version is not None and row.config_version!=body.expected_config_version:
         raise APIError(409,'PROVIDER_CHANGED','账号已被其他操作修改，请重新加载后保存')
@@ -194,6 +195,10 @@ async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depend
     from app.services.operations_settings import vector
     if vector['provider_id']==row.id and any(getattr(row,f)!=checked_values[f] for f in ('provider_type','protocol','base_url','protocol_config')):
         raise APIError(409,'PROVIDER_IN_USE','共享向量服务正在使用此账号；请先替换向量服务账号，再修改服务端点或协议')
+    if row.status=='enabled' and checked_values['status']!='enabled':
+        from app.services.provider_rules import protect_removed
+        names=set((await db.scalars(select(ProviderModelMapping.logical_model).where(ProviderModelMapping.provider_id==row.id,ProviderModelMapping.deleted_at.is_(None)))).all())
+        await protect_removed(db,row,names)
     for field,value in checked_values.items(): setattr(row,field,value)
     if body.api_key is not None: row.api_key_encrypted=encrypt_secret(body.api_key.get_secret_value())
     elif body.clear_api_key: row.api_key_encrypted=None

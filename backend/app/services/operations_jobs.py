@@ -35,10 +35,11 @@ async def health_checks(cursor=0):
             success,code=True,None
         except ProviderFailure as error:success,code=False,error.code
         except Exception:success,code=False,'PROVIDER_CHECK_FAILED'
+        unsupported=not success and (getattr(adapter,'http_status',None) in (404,405,501) or code=='UNSUPPORTED_OPERATION')
         async with session_factory.begin() as db:
             await db.execute(update(Provider).where(Provider.id==row.id,Provider.config_version==version,Provider.status=='enabled',Provider.deleted_at.is_(None)).values(
-                health_status='healthy' if success else 'unhealthy',failure_count=0 if success else Provider.failure_count+1,
-                cooldown_until=None,last_test_at=now(),last_http_status=getattr(adapter,'http_status',None),last_error_code=code,
+                health_status='healthy' if success else 'unknown' if unsupported else 'unhealthy',failure_count=0 if success else Provider.failure_count if unsupported else Provider.failure_count+1,
+                cooldown_until=Provider.cooldown_until if unsupported else None,last_test_at=now(),last_http_status=getattr(adapter,'http_status',None),last_error_code=code,
                 last_latency_ms=getattr(adapter,'latency_ms',None)))
     return rows[-1].id if len(rows)==50 else 0
 
