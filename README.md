@@ -1,6 +1,6 @@
 # 合力数据AI网关
 
-HeliData AI Gateway提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。当前应用版本v0.1.2，数据库版本0028，正式入口为http://192.168.31.97:18080。当前功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
+HeliData AI Gateway提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。当前应用版本v0.2.1，数据库版本0028，正式入口为http://192.168.31.97:18080。当前功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
 
 ## 技术架构与目录
 
@@ -23,11 +23,11 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 ```bash
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.1.2 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.2.1 .
 mkdir -p /opt/AIGateway/data
 docker run -d --name helidata-ai-gateway \
   -p 18080:80 -v /opt/AIGateway/data:/data:Z \
-  --restart unless-stopped helidata-ai-gateway:v0.1.2
+  --restart unless-stopped helidata-ai-gateway:v0.2.1
 curl -fsS http://127.0.0.1:18080/health
 ```
 

@@ -18,7 +18,7 @@ async function refresh() {
 onMounted(refresh)
 </script>
 <template>
-  <div class="page">
+  <div class="page health-page">
     <header><div class="brand">HD</div><strong>合力数据AI网关</strong><span>HeliData AI Gateway</span></header>
     <main>
       <div class="eyebrow">运行环境 · 阶段 {{health?.phase ?? '—'}}</div>
@@ -40,6 +40,3 @@ onMounted(refresh)
 <style scoped>
 .page{min-height:100vh;background:var(--page-bg);color:var(--text)}header{display:flex;align-items:center;gap:16px;padding:22px 5%;background:var(--surface);border-bottom:1px solid var(--line)}header span{color:#738299;font-size:13px}.brand{background:#1865da;color:white;border-radius:12px;padding:10px;font-weight:800}main{max-width:1100px;margin:60px auto;padding:0 24px}.eyebrow{color:#2867bb;font-size:14px}h1{font-size:32px;margin-bottom:12px}p{color:var(--muted);line-height:1.8}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin:32px 0}.label{font-size:16px;margin-bottom:22px}section{margin-top:44px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:8px}h2{font-size:18px}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}header span{display:none}}
 </style>
-
-
-

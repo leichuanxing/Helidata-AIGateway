@@ -6,6 +6,8 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/console.css'
+import './styles/refinement.css'
+import {navigating} from './ui/navigation'
 import PageHeader from './components/PageHeader.vue'
 import EmptyState from './components/EmptyState.vue'
 import UiIcon from './components/UiIcon.vue'
@@ -60,6 +62,7 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/:pathMatch(.*)*',redirect:'/'}
 ]})
 router.beforeEach(async to=>{
+  navigating.value=true
   const auth=useAuth(pinia);await auth.init()
   if(to.path==='/health-status')return true
   if(!auth.user)return to.path==='/login'?true:'/login'
@@ -69,6 +72,11 @@ router.beforeEach(async to=>{
   if(to.meta.superAdmin&&auth.user.role!=='super_admin')return auth.user.role==='user'?'/portal/models':'/admin/dashboard'
   return true
 })
+router.afterEach((to,from)=>{
+  navigating.value=false
+  if(to.path!==from.path)window.scrollTo({top:0,behavior:'instant'})
+})
+router.onError(()=>{navigating.value=false})
 createApp(App).component('PageHeader',PageHeader).component('EmptyState',EmptyState).component('UiIcon',UiIcon).use(pinia).use(router).use(ElementPlus,{locale:zhCn}).mount('#app')
 
 
