@@ -84,7 +84,7 @@ async def route(db,ctx):
             except APIError as error:
                 embedding_id=embedding_id or ctx.deferred.get('_selection_embedding_id')
                 reason=error.detail['code']
-                if error.status_code in (401,403,409,429,499) or snapshot['fallback']=='error':raise
+                if error.status_code in (400,401,403,409,429,499) or snapshot['fallback']=='error':raise
                 classification=snapshot['fallback'];status='fallback';source='fallback'
         selected=cfg.simple_model_group if classification=='simple' else cfg.complex_model_group
         from app.api.admin.smart_route import real_members

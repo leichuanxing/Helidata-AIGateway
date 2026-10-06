@@ -66,6 +66,9 @@ async def catalog(db,user_group_id):
     for cfg in virtual_rows:
         if not governance['smart_route_enabled'] or cfg.status!='enabled':continue
         if cfg.embedding_model not in available or not {cfg.simple_model_group,cfg.complex_model_group}.issubset(set(ids)):continue
+        from app.services.vector_service import pin
+        from app.providers.operations import compatible
+        if not any(compatible('embeddings',p) for m,p in pin(await candidates(db,cfg.embedding_model),cfg.embedding_model)):continue
         try:
             for ident in (cfg.simple_model_group,cfg.complex_model_group):await real_members(db,ident)
         except APIError:continue

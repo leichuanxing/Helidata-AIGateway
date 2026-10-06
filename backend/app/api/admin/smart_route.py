@@ -64,7 +64,8 @@ async def save(body,request,actor,db,row=None):
     from app.services.operations_settings import vector
     if vector['model'] and body.embedding_model!=vector['model']:raise APIError(400,'VECTOR_MODEL_MISMATCH','路由规则需使用系统配置中的共享向量模型')
     embedding=await db.get(LogicalModel,body.embedding_model)
-    if not embedding or embedding.model_type!='embedding' or not any(compatible('embeddings',p) for m,p in await candidates(db,body.embedding_model)):
+    from app.services.vector_service import pin
+    if not embedding or embedding.model_type!='embedding' or not any(compatible('embeddings',p) for m,p in pin(await candidates(db,body.embedding_model),body.embedding_model)):
         raise APIError(400,'ROUTE_EMBEDDING_UNAVAILABLE','请选择有可用OpenAI兼容映射的Embedding逻辑模型')
     for ident in (body.simple_model_group,body.complex_model_group):await real_members(db,ident)
     if not row:
@@ -77,7 +78,7 @@ async def save(body,request,actor,db,row=None):
         for name,value in body.model_dump().items():setattr(row,name,value)
         if changed:
             row.vector_generation+=1
-            await db.execute(update(RouteSample).where(RouteSample.config_id==row.id).values(vector_status='pending',vector_error=None,
+            await db.execute(update(RouteSample).where(RouteSample.config_id==row.id).values(vector_status='stale',vector_requested=False,vector_error=None,
                 revision=RouteSample.revision+1,requested_by=actor.id,job_started_at=None,vector_request_id=None))
         action='update_route'
     await db.flush();await db.refresh(row);audit(db,actor.id,action,row.id,request.client.host,resource_type='route_config')
@@ -116,19 +117,24 @@ async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(admi
         evidence=await exact_match(db,cfg,text)
         if evidence:source='local_rule'
         else:
-            await db.commit();embedding_id=generate()
-            vector,_=await embedding(actor.id,snapshot['embedding_model'],text,request.client.host,request_id=embedding_id)
-            cfg=await db.scalar(select(RouteConfig).where(RouteConfig.id==ident).execution_options(populate_existing=True))
-            if not cfg or any(getattr(cfg,key)!=value for key,value in snapshot.items()):
-                raise APIError(409,'ROUTE_CHANGED','预览期间模型选择配置已变化，请重试')
-            evidence=await nearest(db,cfg,vector)
-        choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
-        classification=choice.classification;reason=choice.reason;status='classified' if classification else 'failed'
-        if classification is None:classification='simple';status='fallback'
+            try:
+                await db.commit();embedding_id=generate()
+                vector,_=await embedding(actor.id,snapshot['embedding_model'],text,request.client.host,request_id=embedding_id)
+                cfg=await db.scalar(select(RouteConfig).where(RouteConfig.id==ident).execution_options(populate_existing=True))
+                if not cfg or any(getattr(cfg,key)!=value for key,value in snapshot.items()):
+                    raise APIError(409,'ROUTE_CHANGED','预览期间模型选择配置已变化，请重试')
+                evidence=await nearest(db,cfg,vector)
+            except APIError as error:
+                if error.status_code in (400,401,403,409,429,499) or snapshot['fallback']=='error':raise
+                classification=snapshot['fallback'];reason=error.detail['code'];source='fallback';status='fallback'
+        if classification is None:
+            choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
+            classification=choice.classification;reason=choice.reason;status='classified' if classification else 'failed'
+            if classification is None:classification='simple';status='fallback'
         if classification:
             group_id=cfg.simple_model_group if classification=='simple' else cfg.complex_model_group
-            group,models=await real_members(db,group_id,'chat');group_name=group.name
-        return {'data':{'status':status,'classification':classification,'similarity':choice.similarity,'confidence':choice.confidence,
+            group,models=await real_members(db,group_id);group_name=group.name
+        return {'data':{'status':status,'classification':classification,'similarity':choice.similarity if choice else None,'confidence':choice.confidence if choice else None,
             'reason':reason,'source':source,'normalized_text':text,'request_kind':'preview',
             'selected_model_group':group_id,'selected_group_name':group_name,'selected_model':models[0] if models else None,
             'candidate_models':models,'evidence':evidence,'top_k':cfg.top_k,'elapsed_ms':round((monotonic()-started)*1000,2),
