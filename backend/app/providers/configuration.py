@@ -1,7 +1,8 @@
 """Select a wire protocol without changing legacy provider URL semantics."""
-NAMES={'openai-completions':'openai','openai-responses':'openai','anthropic-messages':'anthropic','ollama':'ollama'}
+NAMES={'openai-completions':'openai','openai-responses':'openai','anthropic-messages':'anthropic','ollama':'ollama',
+       'openai-embeddings':'openai','openai-images':'openai','openai-rerank':'openai'}
 NATIVE={'chat':'openai-completions','responses':'openai-responses','messages':'anthropic-messages',
-        'embeddings':'openai-completions','images':'openai-completions','rerank':'openai-completions'}
+        'embeddings':'openai-embeddings','images':'openai-images','rerank':'openai-rerank'}
 
 
 def configurations(provider):
@@ -16,6 +17,8 @@ def select_protocol(provider,operation=None):
     config=configurations(provider)
     preferred=NATIVE.get(operation)
     if preferred in config:return preferred
+    # Previously configured accounts used the completions prefix for these operations.
+    if operation in ('embeddings','images','rerank') and 'openai-completions' in config:return 'openai-completions'
     if operation=='chat' and 'anthropic-messages' in config:return 'anthropic-messages'
     if operation=='messages' and 'openai-completions' in config:return 'openai-completions'
     if operation not in (None,'models','preflight'):return None

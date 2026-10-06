@@ -71,3 +71,5 @@
 账号新增/编辑支持 `protocol_config`：以 `openai-completions`、`openai-responses`、`anthropic-messages`（可同时选择）或独立 `ollama` 为键，值为 `{ "path_prefix": "/v1", "auth_type": "bearer" }`。Anthropic 也允许 `x-api-key`。路径前缀可留空，不允许查询参数、片段或路径穿越。`protocol` 保留为主协议及旧接口兼容字段。`default_test_model` 为本账号已启用映射的逻辑模型名，传 null 清空。连接测试只读取模型列表，可返回 `test_model`、`model_available`，未找到返回 `TEST_MODEL_NOT_FOUND`，不改变账号的正常连接状态。
 
 智能路由保留 `/api/admin/smart-route` 接口兼容性：样本列表支持classification/q筛选；日志支持q（Request ID/模型/规范化文本）、source（local_rule/vector/fallback/error/legacy）、request_kind（real/preview），新增GET `/logs/{id}` 详情。预览保存独立决策，返回request_id/source/confidence/normalized_text/evidence；本地精确匹配时embedding_request_id为空。CSV保留两列模板兼容，允许similarity_threshold与remark可选列。统计含previews计数和source分布，Token不重复计Embedding子调用。
+
+模型供应商新增protocol_type（text/image/vector，历史账号可空）、account_type；GET列表支持protocol_type/具体protocol及账号或模型q搜索，返回models与effective_protocol_type。POST创建须提交1至100条model_mappings。POST /api/admin/providers/{id}/test-models须提交consent=true、models和expected_config_version；包含图片需image_consent=true；结果含request_id、operation、success、error_code及已上报total_tokens。原/test保留只读模型列表连接检查，不发起生成。删除账号同步软删除映射并保留历史，唯一被路由引用的向量模型禁止移除。

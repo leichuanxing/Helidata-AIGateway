@@ -36,7 +36,7 @@ class ProtocolRoute(BaseModel):
         return value.rstrip('/')
 
 
-ProtocolName=Literal['openai-completions','openai-responses','anthropic-messages','ollama']
+ProtocolName=Literal['openai-completions','openai-responses','anthropic-messages','openai-embeddings','openai-images','openai-rerank','ollama']
 
 
 def valid_routes(value):
@@ -55,6 +55,8 @@ class ProviderCreate(BaseModel):
     protocol: Literal['openai','anthropic','ollama']
     base_url: str=Field(min_length=1,max_length=2048)
     protocol_config: dict[ProtocolName,ProtocolRoute] | None=None
+    protocol_type: Literal['text','image','vector'] | None=None
+    account_type: str=Field(default='standard',min_length=1,max_length=40,pattern=r'^[a-z_]+$')
     default_test_model: str | None=Field(default=None,min_length=1,max_length=100)
     api_key: SecretStr | None=Field(default=None,max_length=4096)
     proxy: str | None=Field(default=None,max_length=2048)
@@ -121,6 +123,8 @@ class ProviderEdit(BaseModel):
     protocol: Literal['openai','anthropic','ollama'] | None=None
     base_url: str | None=Field(default=None,min_length=1,max_length=2048)
     protocol_config: dict[ProtocolName,ProtocolRoute] | None=None
+    protocol_type: Literal['text','image','vector'] | None=None
+    account_type: str | None=Field(default=None,min_length=1,max_length=40,pattern=r'^[a-z_]+$')
     default_test_model: str | None=Field(default=None,min_length=1,max_length=100)
     api_key: SecretStr | None=Field(default=None,max_length=4096)
     clear_api_key: bool=False
@@ -136,7 +140,7 @@ class ProviderEdit(BaseModel):
     @classmethod
     def mapping_names(cls,value):return unique_mapping_names(value)
 
-    @field_validator('name','provider_type','protocol','base_url','priority','max_concurrency','status','remark')
+    @field_validator('name','provider_type','protocol','base_url','priority','max_concurrency','status','remark','account_type')
     @classmethod
     def not_null(cls,value):
         if value is None: raise ValueError('Null not allowed')
@@ -150,5 +154,5 @@ class ProviderDiscovery(ProviderCreate):
 
 def public_provider(row):
     from app.gateway.provider_health import state
-    fields=('id','name','provider_type','protocol','base_url','protocol_config','default_test_model','proxy','priority','max_concurrency','status','health_status','failure_count','cooldown_until','remark','last_test_at','last_http_status','last_latency_ms','last_error_code','created_at','updated_at')
-    return {**{f:getattr(row,f) for f in fields},'config_version':row.config_version,'has_api_key':bool(row.api_key_encrypted),'scheduling_state':state(row)}
+    fields=('id','name','provider_type','protocol','protocol_type','account_type','base_url','protocol_config','default_test_model','proxy','priority','max_concurrency','status','health_status','failure_count','cooldown_until','remark','last_test_at','last_http_status','last_latency_ms','last_error_code','created_at','updated_at')
+    return {**{f:getattr(row,f) for f in fields},'provider_type_name':PROVIDER_TYPES.get(row.provider_type,{}).get('name',row.provider_type),'account_type_name':PROVIDER_TYPES.get(row.provider_type,{}).get('account_types',{}).get(row.account_type,{}).get('name','标准账号'),'config_version':row.config_version,'has_api_key':bool(row.api_key_encrypted),'scheduling_state':state(row)}

@@ -5,7 +5,7 @@ import {useRoute} from 'vue-router'
 import {api,message} from '../api/client'
 const route=useRoute(),row=ref<any>(null),error=ref(''),loading=ref(false)
 const labels:Record<string,string>={success:'成功',failure:'失败',client_cancelled:'客户端取消',started:'开始调用',not_sent:'未发送'}
-const stages:Record<string,string>={authentication:'认证',user_validation:'用户校验',group_validation:'用户组校验',model_permission:'模型权限',compliance:'内容审核入口',smart_routing:'智能路由入口',model_selection:'模型选择',provider_scheduler:'账号调度',quota:'配额',concurrency:'四级并发',provider_concurrency:'账号占用',protocol_adapter:'协议适配',upstream:'上游调用',usage:'用量记录',call_log:'终态日志',request_validation:'请求格式校验'}
+const stages:Record<string,string>={admin_provider_test:'管理员账号测试',authentication:'认证',user_validation:'用户校验',group_validation:'用户组校验',model_permission:'模型权限',compliance:'内容审核入口',smart_routing:'智能路由入口',model_selection:'模型选择',provider_scheduler:'账号调度',quota:'配额',concurrency:'四级并发',provider_concurrency:'账号占用',protocol_adapter:'协议适配',upstream:'上游调用',usage:'用量记录',call_log:'终态日志',request_validation:'请求格式校验'}
 let generation=0
 async function load(){const mine=++generation;loading.value=true;row.value=null;error.value='';try{const d=(await api.get('/admin/call-logs/'+encodeURIComponent(String(route.params.requestId)))).data.data;if(mine===generation)row.value=d}catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}}
 watch(()=>route.params.requestId,load,{immediate:true})

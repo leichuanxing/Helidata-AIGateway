@@ -2,7 +2,7 @@
 
 正式完整构建及首次启动见README。当前目标主机192.168.31.97，应用根目录/opt/AIGateway，宿主数据/data对应/opt/AIGateway/data，入口18080。现有OpenResty和Uptime Kuma使用其他端口，部署不修改这些服务。仅80映射容器端口，不开放PostgreSQL/Redis。
 
-当前应用v0.1.2，数据库0024。历史阶段发布和测试工具已清理；日常完整构建使用docker/Dockerfile。
+当前应用v0.1.2，数据库0025。历史阶段发布和测试工具已清理；日常完整构建使用docker/Dockerfile。
 
 ## 发布与验证
 

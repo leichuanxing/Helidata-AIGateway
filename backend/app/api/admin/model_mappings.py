@@ -12,6 +12,8 @@ from app.providers.registry import build_adapter
 from app.providers.base import ProviderFailure
 from app.services.provider_crypto import decrypt_secret
 from app.services.sessions import audit
+from app.services.provider_rules import category_mapping,protect_removed
+from sqlalchemy import func
 router=APIRouter(prefix='/api/admin',tags=['模型映射'])
 
 
@@ -76,6 +78,9 @@ async def mappings(provider_id: int,actor=Depends(administrator),db=Depends(get_
 @router.post('/providers/{provider_id}/model-mappings',status_code=201)
 async def create(provider_id: int,body: MappingInput,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     await config_lock(db);account=await provider(db,provider_id,True)
+    category_mapping(account,body)
+    count=await db.scalar(select(func.count()).select_from(ProviderModelMapping).where(ProviderModelMapping.provider_id==provider_id,ProviderModelMapping.deleted_at.is_(None)))
+    if count>=100:raise APIError(422,'MAPPING_LIMIT','每个账号最多100个模型映射')
     await canonical(db,body.logical_model,body.model_type)
     row=ProviderModelMapping(provider_id=provider_id,**body.model_dump());db.add(row)
     try:
@@ -100,6 +105,8 @@ async def mapping(db,provider_id,mapping_id):
 async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     row=await mapping(db,provider_id,mapping_id);await canonical(db,body.logical_model,body.model_type)
     account=await provider(db,provider_id)
+    category_mapping(account,body)
+    if body.logical_model!=row.logical_model:await protect_removed(db,account,{row.logical_model})
     if account.default_test_model==row.logical_model:
         account.default_test_model=body.logical_model if body.status=='enabled' else None
     for f,v in body.model_dump().items(): setattr(row,f,v)
@@ -113,8 +120,12 @@ async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Requ
 
 @router.delete('/providers/{provider_id}/model-mappings/{mapping_id}')
 async def remove(provider_id: int,mapping_id: int,request: Request,actor=Depends(administrator),db=Depends(get_session)):
-    row=await mapping(db,provider_id,mapping_id);row.deleted_at=now();row.status='disabled'
+    row=await mapping(db,provider_id,mapping_id)
     account=await provider(db,provider_id)
+    count=await db.scalar(select(func.count()).select_from(ProviderModelMapping).where(ProviderModelMapping.provider_id==provider_id,ProviderModelMapping.deleted_at.is_(None)))
+    if count<=1:raise APIError(409,'LAST_PROVIDER_MAPPING','账号至少保留一个模型映射')
+    await protect_removed(db,account,{row.logical_model})
+    row.deleted_at=now();row.status='disabled'
     if account.default_test_model==row.logical_model:account.default_test_model=None
     audit(db,actor.id,'delete_model_mapping',row.id,request.client.host,resource_type='model_mapping');await db.commit()
     return {'data':{'message':'映射已删除，历史记录保留'}}
