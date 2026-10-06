@@ -2,6 +2,8 @@
 
 正式完整构建及首次启动见README。当前目标主机192.168.31.97，应用根目录/opt/AIGateway，宿主数据/data对应/opt/AIGateway/data，入口18080。现有OpenResty和Uptime Kuma使用其他端口，部署不修改这些服务。仅80映射容器端口，不开放PostgreSQL/Redis。
 
+当前部署已于2026-10-06从0017升级0022，详见[正式18080更新](reproduction-production-0022.md)。下方stage20固定脚本及0017流程为历史发布记录；本次固定脚本为docker/deploy_reproduction_0022.py，不能重复使用。
+
 ## 发布与验证
 
 1. 构建完整`docker/Dockerfile`并固定镜像ID。阶段Dockerfile仅用于候选迭代，交付使用完整构建。
