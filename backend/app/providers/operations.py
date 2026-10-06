@@ -10,6 +10,9 @@ CODECS={'responses':responses,'messages':messages,'embeddings':embeddings,'reran
 
 def compatible(operation,provider):
     if operation=='preflight':return True
+    from app.providers.registry import PROVIDER_TYPES
+    supported=PROVIDER_TYPES.get(provider.provider_type,{}).get('operations')
+    if supported is not None and operation not in supported:return False
     if operation in ('chat','messages'):return provider.protocol in ('openai','anthropic')
     if operation in ('responses','embeddings','images'):return provider.protocol=='openai'
     return operation=='rerank' and provider.protocol=='openai' and provider.provider_type=='custom_openai'

@@ -10,7 +10,7 @@ inspect=json.loads(subprocess.check_output(['docker','inspect',name]))[0]
 assert any(m['Destination']=='/data' and Path(m['Source']).resolve()==data for m in inspect['Mounts'])
 assert inspect['State']['Running']
 candidate=root/'reproduction-ui-candidate'
-scripts=['reproduction_provider_acceptance.py','reproduction_model_groups.py','reproduction_priority.py','reproduction_users.py','reproduction_route_samples.py','reproduction_route_reporting.py','reproduction_group_access.py']
+scripts=['reproduction_provider_acceptance.py','reproduction_model_groups.py','reproduction_priority.py','reproduction_users.py','reproduction_route_samples.py','reproduction_route_reporting.py','reproduction_group_access.py','reproduction_zhipu_providers.py']
 for script in scripts:
     subprocess.run(['docker','cp',str(candidate/'tests'/script),name+':/tmp/'+script],check=True,stdout=subprocess.DEVNULL)
     result=subprocess.run(['docker','exec','-e','PYTHONPATH=/app/backend',name,'python','/tmp/'+script],capture_output=True,text=True)
@@ -19,4 +19,4 @@ for script in scripts:
     print(result.stdout.strip(),flush=True)
 result=subprocess.run(['docker','exec','-w','/app/backend',name,'alembic','current'],capture_output=True,text=True,check=True)
 assert result.stdout.strip().startswith('0022'),result.stdout
-print('PASS: fresh candidate image boots and migrations reach0022; seven isolated suites passed; production never mounted.',flush=True)
+print('PASS: fresh candidate image boots and migrations reach0022; eight isolated suites passed; production never mounted.',flush=True)
