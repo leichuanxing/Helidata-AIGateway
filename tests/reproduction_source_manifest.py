@@ -13,7 +13,7 @@ for folder in ('backend','frontend','docker','tests'):
                 files.append(p)
 files.extend(p for p in (root/'docs').glob('reproduction-*') if p.is_file() and p.name!='reproduction-candidate-manifest.json')
 files.extend(root/p for p in ('README.md','.dockerignore','config/config.yaml.example','docs/product-reproduction.md','docs/current-status.md') if (root/p).is_file())
-manifest={'status':'in_progress_deployed' if args.deployed else 'in_progress_not_deployed','verified_date':'2026-10-06','migration':'0022',
+manifest={'status':'in_progress_deployed' if args.deployed else 'in_progress_not_deployed','verified_date':'2026-10-06','migration':'0022','application_version':'0.1.1',
     'preview_image':args.preview_image,
     'production_image':args.preview_image if args.deployed else 'sha256:c0c485786bcc56cfe8874f689be93cd5cb9be7c543bee3dcf40a5f1ec4451204',
     'files':{p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(set(files))}}

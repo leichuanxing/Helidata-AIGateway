@@ -1,0 +1,4 @@
+# Before building, tag verified image80d0db38273d as this local base.
+FROM helidata-ai-gateway:reproduction0022-version-base
+LABEL org.opencontainers.image.version="0.1.1"
+COPY backend/app/main.py /app/backend/app/main.py
