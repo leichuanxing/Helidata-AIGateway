@@ -1,4 +1,0 @@
-PASS read-only preflight: pinned0014 production; /data and18080; Provider117 retained; pinned0017 final image
-PASS deployed:0.20.0/0017; all protected snapshots identical; Provider117 unchanged; four processes, health, pgvector, CSP and public settings verified
-PRIVATE_BACKUP=/opt/AIGateway/.deployment/stage20-before-20261005T142449Z
-PREVIOUS_STOPPED_CONTAINER=helidata-ai-gateway-before-stage20-20261005T142449Z

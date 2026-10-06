@@ -1,8 +1,0 @@
-ISOLATED_CONTAINER=helidata-stage20-ui-2075b750
-PASS 1: backup super-admin restriction, administrator audit read, bounded timezone filters, no audit deletion
-PASS 2: single active job enforced across queued/running states; interrupted worker records failure and removes its abandoned private work directory
-PASS 3: real pg_dump+config+Master Key+uploads archive; SHA256/size verified; 700 directory/600 file; protected download
-PASS 4: archive pg_restore into a separate real database; users/version/provider ciphertext restored and decryptable with paired Master Key; config/uploads match
-PASS 5: upload symlink rejected; failed job/audit persisted; no partial archive or temporary directory
-PASS 6: identity/request ID snapshot survives rename and hard deletion; failed login visible; audit details exclude credentials
-PASS 7: actual user disable/delete, group update, Provider CRUD, model group CRUD, administrator API Key create/delete all audited without secrets

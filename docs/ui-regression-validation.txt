@@ -1,9 +1,0 @@
-ISOLATED_CONTAINER=helidata-stage17-candidate-271ff3be
-PASS1: role gates; NFKC text/wildcard/regex Block; zero upstream/Provider slot/usage; immutable Request ID evidence; invalid regex rejected
-PASS2: Audit continues real HTTP generation and actual6 Token settlement; model/group scoped rules; logs contain IDs/risk snapshots without text
-PASS3: actual audit DB outage does not block generation; protected body-free outbox replays once after recovery
-PASS4: pinned real local ONNX multilingual Embedding ->384 dimensions -> actual pgvector cosine -> semantic Block with zero Provider requests
-PASS5: Block precedes AI-Auto Embedding; abandoned semantic jobs recover under version control; bounded time queries
-PASS7: synthetic ranking regression with102 candidates proves lower-ranked Block evidence cannot be masked by101 Audit samples
-UI_READY
-PASS6: source in-use protection and vector cascade preserve historical evidence; all runtime leases released

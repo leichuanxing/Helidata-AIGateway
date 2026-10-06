@@ -1,6 +1,0 @@
-# Build frontend target as helidata-ai-gateway:zhipu-providers-ui.
-# Overlay the verified v0.1.1 base image 4eb303265282 with provider integration.
-FROM helidata-ai-gateway:zhipu-providers-ui AS ui
-FROM helidata-ai-gateway:v0.1.1
-COPY --from=ui /build/dist /app/frontend
-COPY backend/ /app/backend/

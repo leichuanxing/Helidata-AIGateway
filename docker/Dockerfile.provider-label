@@ -1,5 +1,0 @@
-# Build docker/Dockerfile targetfrontend as helidata-ai-gateway:provider-label-ui.
-# Verify basev0.1.1 is image9625190613f8 before this one-time frontend overlay.
-FROM helidata-ai-gateway:provider-label-ui AS ui
-FROM helidata-ai-gateway:v0.1.1
-COPY --from=ui /build/dist /app/frontend

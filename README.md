@@ -1,8 +1,6 @@
 # 合力数据AI网关
 
-HeliData AI Gateway是大模型统一接入与管理平台，提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。阶段20交付为0.20.0/0017；2026-10-06已将复刻迭代部署到正式18080入口，数据库升级到0022。差异修正见[用户组0022记录](docs/reproduction-group-access-0022.md)，当前部署见[0022发布记录](docs/reproduction-production-0022.md)，阶段20历史见[最终交付记录](docs/stage-20.md)。
-
-当前正在进行官方产品功能与页面复刻，当前版本定义为v0.1.1，数据库版本0022。新候选功能与剩余差距见[复刻工作记录](docs/product-reproduction.md)；原阶段20完成记录不代表本次复刻完成。
+HeliData AI Gateway提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。当前应用版本v0.1.1，数据库版本0022，正式入口为http://192.168.31.97:18080。当前功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
 
 ## 技术架构与目录
 
@@ -16,8 +14,7 @@ Vue3 / TypeScript / Element Plus / ECharts前端通过Nginx访问FastAPI。单�
 | config/ | config.yaml.example模板，无生产凭据 |
 | docker/ | 完整Dockerfile、Nginx、Supervisor、entrypoint和模型下载脚本 |
 | models/compliance/ | 固定版本权重、校验清单；下载脚本可重建 |
-| tests/ | 分阶段验收及阶段20隔离测试 |
-| docs/ | API、数据库、测试、运维、阶段记录和功能Excel提取 |
+| docs/ | API、数据库、运维、当前功能说明及原始需求提取 |
 
 ## 系统要求、Docker构建与运行
 
@@ -26,11 +23,11 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 ```bash
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:stage20-release .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.1.1 .
 mkdir -p /opt/AIGateway/data
 docker run -d --name helidata-ai-gateway \
   -p 18080:80 -v /opt/AIGateway/data:/data:Z \
-  --restart unless-stopped helidata-ai-gateway:stage20-release
+  --restart unless-stopped helidata-ai-gateway:v0.1.1
 curl -fsS http://127.0.0.1:18080/health
 ```
 
@@ -48,7 +45,7 @@ curl -fsS http://127.0.0.1:18080/health
 
 正文预览默认关闭。开启后每份最多16KiB，内置密码/认证/密钥脱敏和附加正则，仅管理员可读；任意自然语言敏感内容无法保证自动识别。调用/路由/审核日志默认保留366天，后台分批清理；用量汇总、管理审计长期保留。模型列表巡检默认关闭，开启只检查模型列表，不执行生成。
 
-1. “账号池”新增Provider，选择协议、Base URL、API Key、代理和容量。凭据AES-GCM加密，保存后不返回明文。测试使用模型列表接口。
+1. “模型供应商”新增Provider，选择协议、Base URL、API Key、代理和容量。凭据AES-GCM加密，保存后不返回明文。测试使用模型列表接口。
 2. 配置模型映射，将对外逻辑模型指向真实上游模型，设置类型及能力。原生接口需要供应商实际支持，不能为不支持的供应商补出Embedding/Rerank。
 3. 创建模型组，设置模型顺序、调度方式和Failover；对外返回逻辑模型名，内部保留路由轨迹。
 4. 创建用户组，授予模型组权限，设置Token配额和组/Key并发；创建用户并关联组。
@@ -89,8 +86,8 @@ OpenAI兼容SDK的`base_url`设为GATEWAY_BASE，使用网关API Key。Responses
 
 `/health`检查就绪，`/health/detail`显示依赖状态，`docker exec helidata-ai-gateway supervisorctl status`查看四进程。401检查身份/Key状态，403检查角色/模型授权，429检查配额/并发/排队，502/504检查供应商协议/鉴权/网络/超时，503检查依赖与资源。用X-Request-ID关联详情和运行日志，不输出Key或完整配置。
 
-数据库失联时调用日志写入0700目录中的0600补偿文件，恢复后幂等重放，不要删除补偿掩盖失败。设置冲突409需重新加载。验收脚本只运行一次性独立数据卷，旧脚本可能删除测试账号或停止依赖，不得在生产执行。实测矩阵、压力边界和真实供应商验收状态见[测试说明](docs/testing.md)。阶段20为最后开发阶段，无阶段21。
+数据库失联时调用日志写入0700目录中的0600补偿文件，恢复后幂等重放，不要删除补偿掩盖失败。设置冲突409需重新加载。需要回归时重新创建独立测试环境，不挂载生产数据或使用生产密钥。
 
 
 
-智谱接入：模型供应商支持“智谱开放平台”和“智谱 Coding Plan”，选择类型自动填入对应Base URL。填写对应API Key和实际可用模型映射后保存；Chat/SSE接入与协议范围、模型发现限制及正式部署证据见[智谱接入记录](docs/reproduction-zhipu-providers.md)。
+智谱接入：模型供应商支持“智谱开放平台”和“智谱 Coding Plan”，选择类型自动填入对应Base URL。填写对应API Key和实际可用模型映射后保存；接入范围和模型发现限制见[系统状态](docs/current-status.md)。

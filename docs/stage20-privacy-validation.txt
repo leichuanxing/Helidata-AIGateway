@@ -1,5 +1,0 @@
-ISOLATED_CONTAINER=helidata-stage20-ui-51a490fa
-PASS: three-role boundaries, public allowlist, validation, optimistic conflict, partial merge and PNG/database branding
-PASS: default-disabled actual Chat/SSE body previews; built-in/custom redaction; bounded previews; detail permission; list omission; instant disable
-PASS: live ASGI body bound, actual upstream timeout, optional non-generating health poll, access-token lifetime; defaults restored
-PASS: bounded expired-log retention; current records retained; database-backed fixture left for persistence validation
