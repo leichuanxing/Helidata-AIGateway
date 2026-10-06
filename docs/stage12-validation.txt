@@ -1,0 +1,23 @@
+Stage12 validation — 2026-10-05 Asia/Shanghai
+Deployment:192.168.31.97:/opt/AIGateway, port18080, image helidata-ai-gateway:stage12, app0.12.0, health phase12, migration0008.
+PASS: Python compilation and Vue/TypeScript/Vite/Docker build.
+PASS: acceptance-stage12.log EXIT0, actual HTTP/DB terminal persistence for successful requests, validation before Pipeline, authentication failures, sanitized400 upstream rejection.
+PASS:500 primary -> successful fallback reconstructed by one Request ID with both Provider/model/config snapshots, upstream statuses and elapsed times; actual usage4/2/cache1/total6.
+PASS: SSE success/in-stream error/client cancellation,200 already-sent header semantics; no false success for event:error data:[DONE]; invalid later usage cannot overwrite known valid usage.
+PASS: preflight validation terminal record with no invented selected model or Token usage.
+PASS: combination identity/model/status/time/HTTP/error/operation filters, pagination, exact Request ID and SQL injection-style string isolation;31-day/naive-time/invalid bounds rejected.
+PASS:26 concurrent inference/admin queries without database connection starvation; ordinary-user403/anonymous401; restart persistence and Provider rename/delete retain immutable historical snapshots.
+PASS: injected DB persistence failure creates mode600 file in mode700 outbox; actual PostgreSQL replay is idempotent and sanitized.
+PASS: acceptance-stage12-outbox.log EXIT0; actual gateway OS user writes protected outbox and replays into PostgreSQL, then owned test record removed.
+PASS: acceptance-stage12-streaming.log EXIT0; real SSE parsing/UTF8/CRLF/multiline/tools/usage/limits/errors/EOF/idle timeout,12 idle-body +1 pre-header cancellation, ASGI2.4 resource lifecycle and one terminal log.
+PASS: acceptance-stage12-cancellation-log.txt;13 final-container cancellations each have one stdout terminal and one durable record;12 SSE200 and1 pre-header499.
+PASS: acceptance-stage12-scheduler.log EXIT0; Sticky/failover/ordered authorization/account capacity/expiry/renewal/Redis fault/cooling/recovery/429/config races and stream retry boundary.
+PASS: acceptance-stage12-nonstream.log EXIT0; real upstream payload/model/usage/tools/multimodal/errors/limits/live permissions/concurrent IDs.
+PASS: acceptance-stage12-core.log EXIT0; directory/preflight/auth/permissions/zero upstream network, actual quota state and sanitized exception500/Request ID logging.
+PASS: acceptance-stage12-resources.log EXIT0; four-level atomic admission, FIFO/full/timeout/cancel/live limits and permissions; shared daily/monthly/permanent quota/reservations/usage/unknown budget/reconciliation/crash recovery, concurrent preflight/Group operations; YAML restored.
+PASS: acceptance-stage12-startup.log EXIT0; fresh0700 data volume initializes migrations through0008, random first-login/change requirement, protected Master Key and writable700 outbox; isolated container/volume removed.
+PASS: browser list/failed filter/detail/return-to-exact-ID query/logout and visual screenshot verification. Evidence:stage12-logs.png,stage12-detail.png (disposable HTTP fixture records).
+Final integrity/resource/cleanup/health checks are recorded in acceptance-stage12-integrity.txt on deployment host.
+Backup:/data/backup/stage12-before-upgrade.sql. Original user/password state preserved; no existing administrator reset or Master Key replacement.
+LIMIT: enabled real upstream Providers=0; paid-model generation remains unverified. TTFT/Tokens/s are null pending Stage13, never simulated.
+Scope stop: Stage12 complete; next Stage13 Token/TTFT/Tokens/s/usage statistics.

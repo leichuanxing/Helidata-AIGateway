@@ -1,0 +1,1 @@
+PASS: final full image Nginx returns real public OpenAPI JSON/version/schema with CSP; public settings allowlist; phase20 and all dependencies healthy

@@ -1,0 +1,23 @@
+Stage9 validation — 2026-10-04
+Application0.9.0; image helidata-ai-gateway:stage9; Migration0006.
+
+PASS: Docker build, Vue/TypeScript/Vite compilation, backend import/execution.
+PASS: actual Nginx/FastAPI/PostgreSQL/HTTPX streaming and curl -N receive data before answer completion.
+PASS: incremental bounded SSE parsing, byte-split UTF-8, CRLF across reads, BOM, lone CR, multiline data, partial EOF.
+PASS: logical model rewrite/restore, role/content/reasoning/tool deltas, usage final frame choices=[], stream_options forwarded, exactly one DONE on success.
+PASS: pre-header auth/rate/content-type failures return sanitized JSON; midstream invalid JSON/upstream error/oversized event/EOF return sanitized SSE event:error without DONE.
+PASS: 12 real HTTP cancellations after first data while upstream idle and 1 cancellation before upstream headers close upstream promptly (<1.5 seconds asserted).
+PASS: all 13 production-process cancellation requests have exactly one client_cancelled terminal call log with matching Request ID.
+PASS: ASGI2.4 explicit disconnect watcher; closed DB session before response body; instrumented user/provider leases remain held through stream and release on success/cancel/error/timeout; upstream HTTP response closes; one terminal log.
+PASS: actual delayed upstream plus test-process idle-timeout override emits UPSTREAM_TIMEOUT; production stream idle timeout remains300 seconds.
+PASS: no fixture connections remain; disposable stage9 users/providers removed.
+PASS: nonstream regression—curl/HTTPX, model rewrite, optional extensions/multimodal/tool messages, validation/auth/model type, error sanitization, limits/network/timeout, live model status/cooldown/protocol and concurrent request IDs.
+PASS: Gateway Core regression—auth/permission/status, model directory/preflight, unified errors, unexpected500, Request ID/log privacy.
+PASS: strict0700 fresh volume initializes all migrations; random first admin login/mandatory password change; temporary container removed.
+PASS: original user/password state summary unchanged; production health all OK, phase9; existing uptime-kuma container remains healthy.
+
+Remote logs: build-stage9.log, acceptance-stage9.log, acceptance-stage9-cancellation-log.txt, acceptance-stage9-nonstream.log, acceptance-stage9-core.log, acceptance-stage9-startup.log.
+Backup: /data/backup/stage9-before-upgrade.sql.
+Production: http://192.168.31.97:18080
+Limit: real HTTP fixtures validate transport/protocol, not paid model generation. Enabled real upstream providers=0.
+Full scheduler/failover remains stage10; actual concurrency/quota enforcement stage11; business call logs/statistics stages12–13. No fabricated production response or token count.

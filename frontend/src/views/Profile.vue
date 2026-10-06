@@ -1,0 +1,11 @@
+<script setup lang="ts">
+import {reactive,ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {ElMessage} from 'element-plus'
+import {api,message} from '../api/client'
+import {useAuth} from '../stores/auth'
+const auth=useAuth(),router=useRouter(),saving=ref(false),changing=ref(false),form=reactive({name:auth.user?.name||'',email:auth.user?.email||'',phone:auth.user?.phone||''}),password=reactive({old:'',value:'',confirm:''})
+async function save(){saving.value=true;try{auth.user=(await api.patch('/portal/profile',{name:form.name,email:form.email||null,phone:form.phone||null})).data.data;ElMessage.success('资料已保存')}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+async function change(){if(password.value!==password.confirm){ElMessage.error('两次密码不一致');return}changing.value=true;try{await api.post('/auth/change-password',{old_password:password.old,new_password:password.value});auth.clear();ElMessage.success('密码已修改，请重新登录');await router.push('/login')}catch(e){ElMessage.error(message(e))}finally{changing.value=false}}
+</script>
+<template><div><PageHeader title="个人设置" description="维护您的联系方式和账号安全。"/><div class="panel" style="max-width:720px"><h2>基本资料</h2><el-form label-width="90px"><el-form-item label="用户名">{{auth.user?.username}}</el-form-item><el-form-item label="姓名"><el-input v-model="form.name" maxlength="100"/></el-form-item><el-form-item label="邮箱"><el-input v-model="form.email" maxlength="254"/></el-form-item><el-form-item label="手机号"><el-input v-model="form.phone" maxlength="30"/></el-form-item><el-form-item><el-button type="primary" :loading="saving" @click="save">保存资料</el-button></el-form-item></el-form></div><div class="panel" style="max-width:720px"><h2>修改密码</h2><p class="muted">修改后所有旧会话将失效。密码至少12位，包含四类字符中的三类。</p><el-form label-width="90px"><el-form-item label="原密码"><el-input v-model="password.old" type="password" show-password autocomplete="current-password"/></el-form-item><el-form-item label="新密码"><el-input v-model="password.value" type="password" show-password autocomplete="new-password"/></el-form-item><el-form-item label="确认密码"><el-input v-model="password.confirm" type="password" show-password autocomplete="new-password"/></el-form-item><el-form-item><el-button type="primary" :loading="changing" @click="change">更新密码</el-button></el-form-item></el-form></div></div></template>

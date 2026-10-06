@@ -1,0 +1,151 @@
+Stage18 operations candidate validation (2026-10-05 Asia/Shanghai)
+CANDIDATE_IMAGE=sha256:87a419d0c4c5192c8d451ab2e57c8c4976a0b9ba0209ea620c74259dd3875e6c
+PRODUCTION=sha256:2500baef92a161eac55d5c2fb0980a573a16a5af34dbcdd38db489395ed491cb healthy
+PRODUCTION_SQL (migration / enabled providers / isolated test users):
+0014
+1
+0
+CONTAINERS:
+helidata-ai-gateway Up 44 minutes (healthy)
+13-uptime-kuma-1 Up 22 hours (healthy)
+Python compileall PASS; final Docker build runs vue-tsc and Vite.
+Browser PASS: create backup -> ready; filtered login audit -> deleted actor snapshot; ordinary user admin/backups -> portal/models.
+A recovery fixture initially created a root-owned work directory; fixture corrected to actual gateway ownership, final 7 groups pass.
+Production is still Stage17; real upstream production calls were not performed.
+
+=== build-stage18-operations-final.log ===
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.52kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.13-slim-bookworm
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:22-bookworm-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 211B done
+#4 DONE 0.0s
+
+#5 [frontend 1/6] FROM docker.io/library/node:22-bookworm-slim
+#5 DONE 0.0s
+
+#6 [pgvector 1/4] FROM docker.io/library/python:3.13-slim-bookworm
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 26.47kB 0.0s done
+#7 DONE 0.0s
+
+#8 [frontend 2/6] WORKDIR /build
+#8 CACHED
+
+#9 [frontend 5/6] COPY frontend/ ./
+#9 CACHED
+
+#10 [frontend 3/6] COPY frontend/package*.json ./
+#10 CACHED
+
+#11 [frontend 4/6] RUN npm ci --no-audit --no-fund
+#11 CACHED
+
+#12 [frontend 6/6] RUN npm run build
+#12 CACHED
+
+#13 [stage-2  2/18] RUN apt-get update && apt-get install -y --no-install-recommends nginx postgresql-15 redis-server supervisor util-linux ca-certificates && rm -rf /var/lib/apt/lists/* && useradd --system --create-home gateway && usermod -a -G gateway postgres
+#13 CACHED
+
+#14 [pgvector 4/4] RUN curl --fail --location --retry 3 https://codeload.github.com/pgvector/pgvector/tar.gz/refs/tags/v0.8.7 -o pgvector.tar.gz     && echo 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85  pgvector.tar.gz' | sha256sum -c -     && tar -xzf pgvector.tar.gz     && make -C pgvector-0.8.7 OPTFLAGS=''     && make -C pgvector-0.8.7 install DESTDIR=/build/install
+#14 CACHED
+
+#15 [stage-2  9/18] COPY models/compliance/ /app/compliance-model/
+#15 CACHED
+
+#16 [stage-2  5/18] COPY --from=pgvector /build/install/usr/share/postgresql/15/extension/ /usr/share/postgresql/15/extension/
+#16 CACHED
+
+#17 [pgvector 3/4] WORKDIR /build
+#17 CACHED
+
+#18 [stage-2  7/18] COPY backend/requirements.txt ./
+#18 CACHED
+
+#19 [stage-2  8/18] RUN pip install --no-cache-dir -r requirements.txt
+#19 CACHED
+
+#20 [stage-2  4/18] COPY --from=pgvector /build/install/usr/lib/postgresql/15/lib/vector.so /usr/lib/postgresql/15/lib/vector.so
+#20 CACHED
+
+#21 [stage-2  6/18] WORKDIR /app/backend
+#21 CACHED
+
+#22 [stage-2  3/18] RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+#22 CACHED
+
+#23 [pgvector 2/4] RUN apt-get update && apt-get install -y --no-install-recommends build-essential postgresql-server-dev-15 curl ca-certificates && rm -rf /var/lib/apt/lists/*
+#23 CACHED
+
+#24 [stage-2 10/18] RUN echo "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193  /app/compliance-model/model.onnx" | sha256sum -c - && echo "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39  /app/compliance-model/tokenizer.json" | sha256sum -c -
+#24 CACHED
+
+#25 [stage-2 11/18] COPY backend/ ./
+#25 DONE 0.1s
+
+#26 [stage-2 12/18] COPY config/ /app/config/
+#26 DONE 0.0s
+
+#27 [stage-2 13/18] COPY --from=frontend /build/dist /app/frontend
+#27 DONE 0.0s
+
+#28 [stage-2 14/18] COPY docker/nginx.conf /app/nginx.conf.template
+#28 DONE 0.0s
+
+#29 [stage-2 15/18] COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
+#29 DONE 0.0s
+
+#30 [stage-2 16/18] COPY docker/redis.conf /etc/redis/gateway.conf
+#30 DONE 0.0s
+
+#31 [stage-2 17/18] COPY docker/entrypoint.sh /app/entrypoint.sh
+#31 DONE 0.0s
+
+#32 [stage-2 18/18] RUN chmod +x /app/entrypoint.sh
+#32 DONE 0.2s
+
+#33 exporting to image
+#33 exporting layers 0.1s done
+#33 writing image sha256:87a419d0c4c5192c8d451ab2e57c8c4976a0b9ba0209ea620c74259dd3875e6c done
+#33 naming to docker.io/library/helidata-ai-gateway:stage18-operations-candidate done
+#33 DONE 0.1s
+
+
+=== acceptance-stage18-operations-final.log ===
+ISOLATED_CONTAINER=helidata-stage18-operations-candidate-811b136b
+PASS 1: backup super-admin restriction, administrator audit read, bounded timezone filters, no audit deletion
+PASS 2: single active job enforced across queued/running states; interrupted worker records failure and removes its abandoned private work directory
+PASS 3: real pg_dump+config+Master Key+uploads archive; SHA256/size verified; 700 directory/600 file; protected download
+PASS 4: archive pg_restore into a separate real database; users/version/provider ciphertext restored and decryptable with paired Master Key; config/uploads match
+PASS 5: upload symlink rejected; failed job/audit persisted; no partial archive or temporary directory
+PASS 6: identity/request ID snapshot survives rename and hard deletion; failed login visible; audit details exclude credentials
+PASS 7: actual user disable/delete, group update, Provider CRUD, model group CRUD, administrator API Key create/delete all audited without secrets
+UI_READY: isolated operations fixture
+
+
+=== migration-stage18-operations.log ===
+PASS: actual Stage17 volume upgrade installs0015; user credential states and Master Key unchanged
+PASS: 0015 downgrade/re-upgrade/idempotency preserves Stage17 routing/compliance/audit/settings snapshots, six-operation call/usage facts, credentials and extension
+PASS: fresh mode-0700 host volume bootstraps non-superuser DB, protected secrets, pgvector and all migrations
+
+
+=== regression-stage18-compliance.log ===
+ISOLATED_CONTAINER=helidata-stage18-compliance-regression-0c192f04
+PASS1: role gates; NFKC text/wildcard/regex Block; zero upstream/Provider slot/usage; immutable Request ID evidence; invalid regex rejected
+PASS2: Audit continues real HTTP generation and actual6 Token settlement; model/group scoped rules; logs contain IDs/risk snapshots without text
+PASS3: actual audit DB outage does not block generation; protected body-free outbox replays once after recovery
+PASS4: pinned real local ONNX multilingual Embedding ->384 dimensions -> actual pgvector cosine -> semantic Block with zero Provider requests
+PASS5: Block precedes AI-Auto Embedding; abandoned semantic jobs recover under version control; bounded time queries
+PASS7: synthetic ranking regression with102 candidates proves lower-ranked Block evidence cannot be masked by101 Audit samples
+PASS6: source in-use protection and vector cascade preserve historical evidence; all runtime leases released

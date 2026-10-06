@@ -1,0 +1,103 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.ui
+#1 transferring dockerfile: 400B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:22-bookworm-slim
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/helidata-ai-gateway:stage17
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 211B done
+#4 DONE 0.0s
+
+#5 [stage-1 1/2] FROM docker.io/library/helidata-ai-gateway:stage17
+#5 DONE 0.0s
+
+#6 [frontend 1/6] FROM docker.io/library/node:22-bookworm-slim
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 41.30kB 0.0s done
+#7 DONE 0.0s
+
+#8 [frontend 3/6] COPY frontend/package*.json ./
+#8 CACHED
+
+#9 [frontend 2/6] WORKDIR /build
+#9 CACHED
+
+#10 [frontend 4/6] RUN npm ci --no-audit --no-fund
+#10 CACHED
+
+#11 [frontend 5/6] COPY frontend/ ./
+#11 DONE 0.0s
+
+#12 [frontend 6/6] RUN npm run build
+#12 0.759 
+#12 0.759 > helidata-ai-gateway@0.1.0 build
+#12 0.759 > vue-tsc --noEmit && vite build
+#12 0.759 
+#12 13.15 vite v6.3.5 building for production...
+#12 13.36 transforming...
+#12 36.73 ✓ 2093 modules transformed.
+#12 38.05 rendering chunks...
+#12 39.24 computing gzip size...
+#12 39.37 dist/index.html                                        0.37 kB │ gzip:   0.30 kB
+#12 39.37 dist/assets/CallLogs-Cy_X-H-h.css                      0.31 kB │ gzip:   0.21 kB
+#12 39.37 dist/assets/ProviderDetail-Dy4fWyn6.css                0.40 kB │ gzip:   0.24 kB
+#12 39.37 dist/assets/SmartRoute-KxI7S64S.css                    0.62 kB │ gzip:   0.30 kB
+#12 39.37 dist/assets/CallLogDetail-BCY2EgV5.css                 0.64 kB │ gzip:   0.34 kB
+#12 39.37 dist/assets/ModelGroups-BX6b8TzL.css                   0.73 kB │ gzip:   0.38 kB
+#12 39.37 dist/assets/Usage-BTuouQQa.css                         0.76 kB │ gzip:   0.34 kB
+#12 39.37 dist/assets/Health-fcirUwEG.css                        1.07 kB │ gzip:   0.45 kB
+#12 39.37 dist/assets/Portal-GbBcq4PH.css                        1.68 kB │ gzip:   0.53 kB
+#12 39.37 dist/assets/Dashboard-BQe9xJrn.css                     1.76 kB │ gzip:   0.53 kB
+#12 39.37 dist/assets/index-DEU6AEpk.css                       342.80 kB │ gzip:  48.44 kB
+#12 39.37 dist/assets/_plugin-vue_export-helper-DlAUqK2U.js      0.09 kB │ gzip:   0.10 kB
+#12 39.37 dist/assets/models-DZyCMxqt.js                         0.14 kB │ gzip:   0.15 kB
+#12 39.37 dist/assets/provider-BGMAT2Eu.js                       0.30 kB │ gzip:   0.26 kB
+#12 39.37 dist/assets/clipboard-D-T-5eh0.js                      0.47 kB │ gzip:   0.36 kB
+#12 39.37 dist/assets/Password-DFoQDE41.js                       1.94 kB │ gzip:   1.05 kB
+#12 39.37 dist/assets/Login-LcoQRjAQ.js                          2.07 kB │ gzip:   1.20 kB
+#12 39.37 dist/assets/UserDetail-BJiUhXLZ.js                     2.39 kB │ gzip:   1.12 kB
+#12 39.37 dist/assets/Health-DpVDpfSq.js                         2.41 kB │ gzip:   1.60 kB
+#12 39.37 dist/assets/Profile-BVBvrP6i.js                        3.11 kB │ gzip:   1.36 kB
+#12 39.37 dist/assets/Portal-82AAmlYT.js                         5.21 kB │ gzip:   2.56 kB
+#12 39.37 dist/assets/Keys-D2-iodsY.js                           5.24 kB │ gzip:   2.40 kB
+#12 39.37 dist/assets/SystemOperations-BbJPLfGY.js               6.47 kB │ gzip:   3.03 kB
+#12 39.37 dist/assets/ModelGroups-p94bEjO2.js                    7.10 kB │ gzip:   3.11 kB
+#12 39.37 dist/assets/Groups-CvKHk7Q4.js                         7.60 kB │ gzip:   3.04 kB
+#12 39.37 dist/assets/Usage-DgTCvPBV.js                          7.62 kB │ gzip:   3.60 kB
+#12 39.37 dist/assets/CallLogs-BMZVpM2q.js                       8.23 kB │ gzip:   3.25 kB
+#12 39.37 dist/assets/Users-BsEBNyYn.js                          8.65 kB │ gzip:   3.31 kB
+#12 39.37 dist/assets/CallLogDetail-Vypg3Nuq.js                  9.42 kB │ gzip:   3.66 kB
+#12 39.38 dist/assets/Dashboard-AMdY2Zjt.js                     11.61 kB │ gzip:   4.76 kB
+#12 39.38 dist/assets/ProviderDetail-BUdF7r3n.js                12.37 kB │ gzip:   4.41 kB
+#12 39.38 dist/assets/Providers-Dohb52wz.js                     12.40 kB │ gzip:   4.35 kB
+#12 39.38 dist/assets/Compliance-wdwvyg5Q.js                    16.20 kB │ gzip:   5.71 kB
+#12 39.38 dist/assets/SmartRoute-DB0LP9uf.js                    21.61 kB │ gzip:   6.94 kB
+#12 39.38 dist/assets/index-sFXXQ4pI.js                      1,002.48 kB │ gzip: 334.82 kB
+#12 39.38 dist/assets/index-ClPwX7rX.js                      1,036.31 kB │ gzip: 343.41 kB
+#12 39.38 
+#12 39.38 (!) Some chunks are larger than 500 kB after minification. Consider:
+#12 39.38 - Using dynamic import() to code-split the application
+#12 39.38 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#12 39.38 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#12 39.38 ✓ built in 26.18s
+#12 DONE 39.6s
+
+#5 [stage-1 1/2] FROM docker.io/library/helidata-ai-gateway:stage17
+#5 CACHED
+
+#13 [stage-1 2/2] COPY --from=frontend /build/dist /app/frontend
+#13 DONE 0.0s
+
+#14 exporting to image
+#14 exporting layers 0.1s done
+#14 writing image sha256:63810483a3e2da0ef6045d35aff996545eeef52217a9af21651535fe020905c6 done
+#14 naming to docker.io/library/helidata-ai-gateway:ui-candidate done
+#14 DONE 0.1s

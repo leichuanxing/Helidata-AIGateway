@@ -1,0 +1,24 @@
+2026-10-05 Asia/Shanghai — Stage14 verified
+Deployment: 192.168.31.97:/opt/AIGateway
+Image: helidata-ai-gateway:stage14
+Application: 0.14.0 / health phase14 / Alembic0010
+Docker image: sha256:e86aeb9260ce2544bec07cb544f0b7ecf7e7738f0a41d8459ba5a503e7301451
+Python compileall backend and Stage14 tests: PASS
+Vue vue-tsc / Vite / Docker build: PASS
+stage14_acceptance.py: EXIT0, 4 PASS groups, actual HTTP/Redis/DB, 21sec streaming renewal, cancellation/expiry, 4 windows, Top10+other, auth, Redis outage
+stage14_startup.py: EXIT0, new0700 volume/admin/migration/outbox permissions
+stage13_acceptance.py: EXIT0, 9 PASS groups
+stage13_resource_regression.py: EXIT0, 15 PASS groups
+stage13_streaming_regression.py: serial rerun EXIT0, 6 PASS groups
+stage14_ui.py setup and cleanup: EXIT0
+Browser: admin default Dashboard; actual3 requests/2 successes/1 failure/12 tokens; failure card and hourly chart point to1 failed400 log; Provider103 detail; group64 usage; empty usage state; ordinary user default portal and direct Dashboard redirect; logout
+Screenshots: docs/stage14-dashboard.png and docs/stage14-empty.png, disposable fixture identities and usage subsequently removed
+Final original-users before/after digest: MATCH
+Final call_logs=0 usage_hourly=0 usage_daily=0 test_users=0 enabled_providers=0 quota_reservations=0
+Final global_active=0 streaming_active=0 queue=0 outbox_pending=0
+Gateway max_concurrency=500 queue_size=1000 queue_timeout=30 stream_idle_timeout=300
+Concurrency history:17 minute samples at final check; retained actual operational/test load, no fabricated prior history; grows every10sec; sampled peak may miss shorter bursts
+Final FastAPI/PostgreSQL/Redis/disk: OK; main and13-uptime-kuma-1 healthy
+Backup: /data/backup/stage14-before-upgrade.sql mode600
+/data and encryption master key retained. No enabled paid Provider; production supplier performance not verified.
+Stage15 not started.

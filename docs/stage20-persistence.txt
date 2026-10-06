@@ -1,0 +1,9 @@
+ISOLATED_CONTAINER=helidata-stage20-persistence-192a8079
+PASS: three-role boundaries, public allowlist, validation, optimistic conflict, partial merge and PNG/database branding
+PASS: default-disabled actual Chat/SSE body previews; built-in/custom redaction; bounded previews; detail permission; list omission; instant disable
+PASS: live ASGI body bound, actual upstream timeout, optional non-generating health poll, access-token lifetime; defaults restored
+PASS: bounded expired-log retention; current records retained; database-backed fixture left for persistence validation
+PASS: restart preserves users/passwords, Providers/encryption, mappings, API Keys, settings/PNG, calls/usage, config/Master Key, Redis and uploads
+PASS: actual stop/remove/recreate on same /data preserves all snapshots and0017; public branding reloads from database
+PASS: super/admin/user runtime boundary; randomized authenticated AES encryption rejects tampering; unknown JSON-key privacy; parameterized SQL search; literal XSS label seeded; real Redis/Postgres outage response/log agreement and catalog recovery
+UI_READY: helidata-stage20-persistence-192a8079

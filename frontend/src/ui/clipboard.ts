@@ -1,0 +1,2 @@
+import {ElMessage} from 'element-plus'
+export async function copyText(value:string){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);else{const field=document.createElement('textarea');field.value=value;field.style.position='fixed';field.style.opacity='0';document.body.appendChild(field);field.select();try{if(!document.execCommand('copy'))throw new Error('copy')}finally{field.remove()}}ElMessage.success('已复制')}catch{ElMessage.error('复制失败，请手动选择并复制')}}

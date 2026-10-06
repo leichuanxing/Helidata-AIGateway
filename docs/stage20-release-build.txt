@@ -1,0 +1,106 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.52kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:22-bookworm-slim
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.13-slim-bookworm
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 211B done
+#4 DONE 0.0s
+
+#5 [frontend 1/6] FROM docker.io/library/node:22-bookworm-slim
+#5 DONE 0.0s
+
+#6 [stage-2  1/18] FROM docker.io/library/python:3.13-slim-bookworm
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 23.63kB 0.0s done
+#7 DONE 0.0s
+
+#8 [stage-2  5/18] COPY --from=pgvector /build/install/usr/share/postgresql/15/extension/ /usr/share/postgresql/15/extension/
+#8 CACHED
+
+#9 [stage-2  2/18] RUN apt-get update && apt-get install -y --no-install-recommends nginx postgresql-15 redis-server supervisor util-linux ca-certificates && rm -rf /var/lib/apt/lists/* && useradd --system --create-home gateway && usermod -a -G gateway postgres
+#9 CACHED
+
+#10 [stage-2  7/18] COPY backend/requirements.txt ./
+#10 CACHED
+
+#11 [frontend 5/6] COPY frontend/ ./
+#11 CACHED
+
+#12 [stage-2  9/18] COPY models/compliance/ /app/compliance-model/
+#12 CACHED
+
+#13 [stage-2  4/18] COPY --from=pgvector /build/install/usr/lib/postgresql/15/lib/vector.so /usr/lib/postgresql/15/lib/vector.so
+#13 CACHED
+
+#14 [frontend 2/6] WORKDIR /build
+#14 CACHED
+
+#15 [frontend 4/6] RUN npm ci --no-audit --no-fund
+#15 CACHED
+
+#16 [pgvector 4/4] RUN curl --fail --location --retry 3 https://codeload.github.com/pgvector/pgvector/tar.gz/refs/tags/v0.8.7 -o pgvector.tar.gz     && echo 'cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85  pgvector.tar.gz' | sha256sum -c -     && tar -xzf pgvector.tar.gz     && make -C pgvector-0.8.7 OPTFLAGS=''     && make -C pgvector-0.8.7 install DESTDIR=/build/install
+#16 CACHED
+
+#17 [stage-2  8/18] RUN pip install --no-cache-dir -r requirements.txt
+#17 CACHED
+
+#18 [stage-2  3/18] RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+#18 CACHED
+
+#19 [stage-2  6/18] WORKDIR /app/backend
+#19 CACHED
+
+#20 [pgvector 2/4] RUN apt-get update && apt-get install -y --no-install-recommends build-essential postgresql-server-dev-15 curl ca-certificates && rm -rf /var/lib/apt/lists/*
+#20 CACHED
+
+#21 [stage-2 11/18] COPY backend/ ./
+#21 CACHED
+
+#22 [frontend 3/6] COPY frontend/package*.json ./
+#22 CACHED
+
+#23 [stage-2 12/18] COPY config/ /app/config/
+#23 CACHED
+
+#24 [stage-2 10/18] RUN echo "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193  /app/compliance-model/model.onnx" | sha256sum -c - && echo "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39  /app/compliance-model/tokenizer.json" | sha256sum -c -
+#24 CACHED
+
+#25 [frontend 6/6] RUN npm run build
+#25 CACHED
+
+#26 [pgvector 3/4] WORKDIR /build
+#26 CACHED
+
+#27 [stage-2 13/18] COPY --from=frontend /build/dist /app/frontend
+#27 CACHED
+
+#28 [stage-2 14/18] COPY docker/nginx.conf /app/nginx.conf.template
+#28 DONE 0.0s
+
+#29 [stage-2 15/18] COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
+#29 DONE 0.0s
+
+#30 [stage-2 16/18] COPY docker/redis.conf /etc/redis/gateway.conf
+#30 DONE 0.0s
+
+#31 [stage-2 17/18] COPY docker/entrypoint.sh /app/entrypoint.sh
+#31 DONE 0.0s
+
+#32 [stage-2 18/18] RUN chmod +x /app/entrypoint.sh
+#32 DONE 0.3s
+
+#33 exporting to image
+#33 exporting layers 0.0s done
+#33 writing image sha256:c0c485786bcc56cfe8874f689be93cd5cb9be7c543bee3dcf40a5f1ec4451204 done
+#33 naming to docker.io/library/helidata-ai-gateway:stage20-release done
+#33 DONE 0.0s

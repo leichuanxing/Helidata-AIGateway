@@ -1,0 +1,23 @@
+Stage11 validation — 2026-10-05 Asia/Shanghai
+Deployment: 192.168.31.97:/opt/AIGateway, port18080, helidata-ai-gateway:stage11, app0.11.0, health phase11, migration0007.
+PASS: backend Python compilation; Docker/Vue/TypeScript/Vite build.
+PASS: acceptance-stage11.log EXIT0; actual HTTP/Redis/PostgreSQL all-four-level admission: 2 executing +1 queued, fourth429 QUEUE_FULL; FIFO promotion; no partial slots or upstream calls while queued.
+PASS: QUEUE_TIMEOUT, queued disconnect, queued Key revocation, live Group capacity increase, independent API Key limits, inherited Provider slot without double-count; executing nonstream disconnect releases all slots/upstream.
+PASS: shared Group daily/monthly/permanent quota, UTC+8 boundary/old-period isolation, pre-network QUOTA_EXCEEDED, parallel forecast reservations, actual usage settlement and restart persistence.
+PASS: SSE cancellation without usage retains unknown budget; valid usage before cancellation records actual5; admin verified reconciliation7, ordinary-user403, repeat409 and audit.
+PASS: expired crash reservation becomes unreported budget20, no fabricated Token usage or automatic refund.
+PASS: 24 preflights +12 admin Group reads +4 Group updates concurrently without DB pool/lock starvation, upstream calls or held resource slots.
+PASS: HTTP400 unused budget;500/timeout uncertain budget and slot cleanup; original YAML restored (500/1000/30/300).
+PASS: acceptance-stage11-scheduler.log EXIT0; Sticky/failover/authorized ordered-model fallback/24 atomic account contenders/expiry/renewal/injected Redis errors/cooling/single recovery probe/429/config races/SSE retry boundary.
+PASS: acceptance-stage11-nonstream.log EXIT0; real upstream JSON/model rewrite/usage/tools/multimodal/limits/errors/live permissions/Request IDs.
+PASS: acceptance-stage11-streaming.log EXIT0 on final image; SSE parsing/UTF8/CRLF/multiline/tools/usage/schema/errors/size/EOF/idle timeout/ASGI2.4/resource lifecycle, including event:error with data:[DONE].
+PASS: acceptance-stage11-cancellation-log.txt; final production container13 actual streaming cancellations each have exactly one client_cancelled terminal log; fixture connections closed.
+PASS: acceptance-stage11-core.log EXIT0; live auth/model permissions, actual preflight quota state without reservation or network, concurrent Request IDs and sanitized error responses.
+PASS: acceptance-stage11-groups.log EXIT0; Stage4 Group/API Key regression.
+PASS: acceptance-stage11-startup.log EXIT0; fresh0700 data volume, first-login/password change, protected encryption key and migration0007; isolated container/volume removed.
+PASS: original users/password-state digest unchanged; no admin reset or Master Key replacement; backup /data/backup/stage11-before-upgrade.sql.
+PASS: temporary stage11 users/providers and quota reservations=0; existing other container healthy; final detailed health all ok.
+Final Redis active/queue cleanup verification recorded in acceptance-stage11-resources.txt.
+UI validation: compiled frontend and actual admin API fields/save behavior; no additional browser visual acceptance.
+LIMIT: enabled real upstream Providers=0; fixtures exercise actual network stack, not paid-model generation. Quota estimates are conservative budgets, not measured Token counts or a guarantee against one-request overage.
+Scope stop: Stage11 complete. Next Stage12 call logs and Request ID; usage statistics follow in Stage13.

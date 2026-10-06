@@ -1,0 +1,39 @@
+阶段5验收记录（2026-10-04）
+
+部署：helidata-ai-gateway:stage5；数据库0005；18080端口，原/data保留。
+构建：Python compileall；vue-tsc --noEmit；Vite生产构建；Docker多阶段构建通过。
+
+阶段5最终HTTP/PostgreSQL验收（修正updated_at异步刷新问题后）：
+PASS: provider CRUD, eight types, validation, admin/user boundary, AES-256-GCM ciphertext and no secret echo
+PASS: auth/HTTP/network/schema/size failures, no credential redirect, disable blocks network, stale test cannot overwrite new config
+PASS: native Anthropic/Ollama protocol requests, actual HTTP proxy, secret replacement/clear, audit and soft deletion
+PASS: all stage5 backend acceptance checks (isolated HTTP protocol fixtures; no live paid model credentials)
+账号筛选验证名称、类型、协议、健康状态；仅管理员/超级管理员管理。
+
+加密单元：4项通过，随机nonce、密文篡改、错误Master Key、缺失/短文件。
+迁移：临时数据库0001→0005；原用户字段不变；外键/配额/并发与Provider并发约束；降级/再升级成功。
+新安装：隔离容器新0700数据卷，随机admin初始密码登录，首次改密保护，0005初始化和目录权限通过。
+
+加密文件恢复测试（隔离容器，业务卷未被修改）：
+PASS: AES-GCM ciphertext and persistent 256-bit key survive container restart
+PASS: missing key with existing ciphertext blocks startup without replacement
+PASS: wrong key blocks startup; authenticated decryption catches mismatch
+PASS: restoring original protected key recovers existing provider credentials
+临时容器全部停止并删除。
+
+阶段4回归：
+PASS: group CRUD, validation, model group FK, assignment revokes sessions, referenced group protected
+PASS: hash-only storage, one-time key display, refresh secrecy, last use, ownership isolation and immediate Key disable
+PASS: immediate group/user/model disable, live permission/quota changes, unassigned group denial, forced change and deletion
+PASS: all stage4 backend acceptance checks
+
+真实外网探测（无Key、无付费生成）：
+DeepSeek https://api.deepseek.com/models：网络连通，HTTP401，UPSTREAM_AUTH_FAILED，314ms。
+浏览器详情页实际连接测试：HTTP401，鉴权失败，296ms；健康状态连接异常，失败计数1。
+截图stage5-provider-detail.jpg仅含已清理临时账号。
+浏览器登录、账号池筛选字段、编辑表单（Key留空）、详情、刷新会话恢复、测试和退出通过。
+
+原管理员密码和数据保留；临时Provider及测试用户清理。健康检查阶段5，FastAPI/PostgreSQL/Redis/磁盘全部ok。
+Master Key32字节，/data/config/provider-encryption.key权限640；备份副本/data/backup/provider-encryption.key权限600。应与数据库一起备份。
+
+验收限制：没有真实付费上游Key，未验证有效账号鉴权和真实生成；自动健康巡检、账号调度、模型映射/发现持久化、SSE和配额执行按后续阶段实现。

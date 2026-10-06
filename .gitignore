@@ -1,0 +1,15 @@
+data/
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.deployment/
+
+.stage1-fresh-data/
+*.tar.gz
+*stage1*.log
+lock-build.log
+
+models/compliance/*.onnx
+models/compliance/tokenizer.json

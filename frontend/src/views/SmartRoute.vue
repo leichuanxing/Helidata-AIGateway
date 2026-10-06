@@ -1,0 +1,140 @@
+<script setup lang="ts">
+import {formatDate} from '../ui/branding'
+import {computed,onUnmounted,reactive,ref,watch} from 'vue'
+import {useRoute,useRouter} from 'vue-router'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import {api,message} from '../api/client'
+const route=useRoute(),router=useRouter()
+const view=computed(()=>route.path.split('/').pop()==='smart-route'?'samples':route.path.split('/').pop()!)
+const configs=ref<any[]>([]),rows=ref<any[]>([]),models=ref<any[]>([]),groups=ref<any[]>([]),loading=ref(false),saving=ref(false),error=ref('')
+const configId=ref<number|null>(null),page=ref(1),total=ref(0),status=ref(''),requestId=ref(''),virtual=ref(''),days=ref(7)
+const logClass=ref(''),logStatus=ref(''),logOperation=ref(''),logModel=ref(''),distribution=ref('classification')
+const range=ref<[Date,Date]|null>(null),statsRange=ref<any>(null),dialog=ref(false),sampleDialog=ref(false),importDialog=ref(false),detail=ref<any>(null)
+const editing=ref<number|null>(null),sampleEditing=ref<number|null>(null),csv=ref('prompt,classification\n简单问候,simple\n复杂推理,complex')
+const blank=()=>({virtual_model:'AI-Auto',embedding_model:'',simple_model_group:0,complex_model_group:0,top_k:5,similarity_threshold:.75,confidence_gap:.1,fallback:'error',status:'disabled'})
+const sampleTable=ref<any>(),selected=ref<any[]>([]),building=ref(false),buildCSV=ref(false)
+const previewDialog=ref(false),previewText=ref(''),previewConsent=ref(false),previewLoading=ref(false),previewResult=ref<any>(null)
+function previewOpen(){previewText.value='';previewConsent.value=false;previewResult.value=null;previewDialog.value=true}
+async function previewRoute(){if(!configId.value||!previewConsent.value)return;previewLoading.value=true;previewResult.value=null;try{previewResult.value=(await api.post('/admin/smart-route/configs/'+configId.value+'/preview',{prompt:previewText.value})).data.data}catch(e){ElMessage.error(message(e))}finally{previewLoading.value=false}}
+const form=reactive(blank()),sample=reactive({prompt:'',classification:'simple',similarity_threshold:null as number|null,remark:'',build_vector:false})
+const labels:Record<string,string>={not_built:'未构建',simple:'简单任务',complex:'复杂任务',classified:'已分类',fallback:'降级',failed:'失败',pending:'待向量化',processing:'处理中',ready:'就绪',stale:'已失效',error:'报错'}
+function groupName(id:number){return groups.value.find(g=>g.id===id)?.name||'#'+id}
+function params(){const end=range.value?.[1]||new Date(),start=range.value?.[0]||new Date(end.getTime()-days.value*86400000);return {start:start.toISOString(),end:end.toISOString(),virtual_model:virtual.value||undefined}}
+let generation=0
+async function load(){const mine=++generation;loading.value=true;error.value='';try{
+  const c=(await api.get('/admin/smart-route/configs')).data.data
+  if(mine!==generation)return;configs.value=c
+  if(!configId.value&&c.length)configId.value=c[0].id
+  if(view.value==='configs'){
+    const [m,g]=await Promise.all([api.get('/admin/logical-models'),api.get('/admin/model-group-options')])
+    if(mine!==generation)return;models.value=m.data.data.filter((x:any)=>x.model_type==='embedding');groups.value=g.data.data
+    rows.value=c
+  }else if(view.value==='samples'){
+    const d=configId.value?(await api.get('/admin/smart-route/samples',{params:{config_id:configId.value,page:page.value,vector_status:status.value||undefined}})).data.data:{items:[],total:0}
+    if(mine!==generation)return;rows.value=d.items;total.value=d.total
+  }else if(view.value==='logs'){
+    const d=(await api.get('/admin/smart-route/logs',{params:{...params(),request_id:requestId.value||undefined,page:page.value,
+      classification:logClass.value||undefined,status:logStatus.value||undefined,operation:logOperation.value||undefined,selected_model:logModel.value||undefined}})).data.data
+    if(mine!==generation)return;rows.value=d.items;total.value=d.total
+  }else{
+    const d=(await api.get('/admin/smart-route/statistics',{params:params()})).data.data
+    if(mine!==generation)return;rows.value=d.items;statsRange.value=d
+  }
+}catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}}
+function open(row?:any){editing.value=row?.id??null;Object.assign(form,blank());if(row)for(const key of Object.keys(blank()))(form as any)[key]=row[key];dialog.value=true}
+async function save(){saving.value=true;try{await api[editing.value?'put':'post']('/admin/smart-route/configs'+(editing.value?'/'+editing.value:''),form);dialog.value=false;await load();ElMessage.success('路由规则已保存')}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+async function remove(row:any){try{await ElMessageBox.confirm('删除规则及其所有样本，历史决策保留。已加入模型组的虚拟模型需先移除关联。','删除 '+row.virtual_model,{type:'warning'});await api.delete('/admin/smart-route/configs/'+row.id);await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}}
+function sampleOpen(row?:any){sampleEditing.value=row?.id??null;Object.assign(sample,{prompt:row?.prompt||'',classification:row?.classification||'simple',similarity_threshold:row?.similarity_threshold??null,remark:row?.remark||'',build_vector:false});sampleDialog.value=true}
+async function sampleSave(){saving.value=true;try{
+  if(sampleEditing.value)await api.put('/admin/smart-route/samples/'+sampleEditing.value,sample)
+  else await api.post('/admin/smart-route/samples',{config_id:configId.value,samples:[sample]})
+  sampleDialog.value=false;await load();ElMessage.success(sample.build_vector?'样本已保存并加入构建队列':'样本已保存，尚未构建向量')
+}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+async function retry(row:any){try{await api.post('/admin/smart-route/samples/'+row.id+'/vectorize');await load();ElMessage.success('已加入向量化队列')}catch(e){ElMessage.error(message(e))}}
+async function sampleRemove(row:any){try{await ElMessageBox.confirm('删除该样本及其向量？','删除样本',{type:'warning'});await api.delete('/admin/smart-route/samples/'+row.id);await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}}
+async function file(event:Event){const f=(event.target as HTMLInputElement).files?.[0];if(!f)return;try{if(f.size>2*1024*1024)throw new Error();csv.value=new TextDecoder('utf-8',{fatal:true}).decode(await f.arrayBuffer())}catch{ElMessage.error('请选择不超过2MB的UTF-8 CSV文件')}finally{(event.target as HTMLInputElement).value=''}}
+async function importCSV(){saving.value=true;try{const d=(await api.post('/admin/smart-route/samples/import',{config_id:configId.value,content:csv.value,build_vector:buildCSV.value})).data.data;importDialog.value=false;await load();ElMessage.success('已导入 '+d.ids.length+' 条样本，已加入构建队列 '+d.queued+' 条')}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+async function buildSelected(all:boolean){if(!configId.value)return;try{await ElMessageBox.confirm('构建会通过已配置的向量服务发起请求，可能产生用量。',all?'构建全部样本向量':'构建选中样本向量',{confirmButtonText:'构建',cancelButtonText:'取消'});building.value=true;const result=(await api.post('/admin/smart-route/samples/vectorize',{config_id:configId.value,all_samples:all,sample_ids:all?[]:selected.value.map(row=>row.id)})).data.data;ElMessage.success('已加入构建队列 '+result.queued+' 条');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}finally{building.value=false}}
+watch(configId,()=>{selected.value=[];sampleTable.value?.clearSelection()})
+const summary=computed(()=>statsRange.value?.summary||{})
+const distributionRows=computed(()=>statsRange.value?.distributions?.[distribution.value]||[])
+function distributionName(name:string|null){if(name===null)return distribution.value==='model'?'未关联调用':'未分类';return labels[name]||({'unknown':'未上报用量'} as Record<string,string>)[name]||name}
+watch(()=>route.fullPath,()=>{configId.value=route.query.config_id?Number(route.query.config_id):null;requestId.value=String(route.query.request_id||'');page.value=1;rows.value=[];load()},{immediate:true})
+const timer=setInterval(()=>{if(view.value==='samples'&&!saving.value&&!loading.value)load()},5000)
+onUnmounted(()=>{clearInterval(timer);generation++})
+</script>
+<template><div>
+<PageHeader title="智能路由" description="管理分类样本，查看路由决策与统计。"/>
+<nav class="route-nav" aria-label="智能路由模块"><router-link to="/admin/smart-route/samples">样本管理</router-link><router-link to="/admin/smart-route/logs">决策日志</router-link><router-link to="/admin/smart-route/statistics">统计</router-link><router-link to="/admin/smart-route/configs">路由规则</router-link></nav>
+<el-alert v-if="error" :title="error" type="error" :closable="false"/>
+<div class="panel">
+<div class="toolbar">
+<template v-if="view==='configs'"><el-button type="primary" @click="open()">新增路由规则</el-button></template>
+<template v-else-if="view==='samples'">
+<el-select v-model="configId" placeholder="选择路由规则" style="width:220px" @change="page=1;load()"><el-option v-for="c in configs" :key="c.id" :label="c.virtual_model" :value="c.id"/></el-select>
+<el-select v-model="status" placeholder="全部向量状态" clearable style="width:160px" @change="page=1;load()"><el-option v-for="s in ['not_built','pending','processing','ready','failed','stale']" :key="s" :label="labels[s]" :value="s"/></el-select>
+<el-button type="primary" :disabled="!configId" @click="sampleOpen()">新增样本</el-button><el-button :disabled="!configId" @click="importDialog=true">批量新增 / CSV导入</el-button><el-button :disabled="!selected.length||building" :loading="building" @click="buildSelected(false)">构建选中向量</el-button><el-button :disabled="!configId||building" :loading="building" @click="buildSelected(true)">构建全部向量</el-button>
+<el-button :disabled="!configId" @click="previewOpen">决策预览</el-button>
+</template>
+<template v-else>
+<el-select v-model="virtual" clearable filterable allow-create placeholder="全部虚拟模型" style="width:190px"><el-option v-for="c in configs" :key="c.id" :label="c.virtual_model" :value="c.virtual_model"/></el-select>
+<el-input v-if="view==='logs'" v-model="requestId" placeholder="Request ID 精确查询" clearable style="width:260px"/>
+<template v-if="view==='logs'">
+<el-select v-model="logClass" clearable placeholder="全部分类" style="width:140px"><el-option v-for="c in ['simple','complex','unclassified']" :key="c" :value="c" :label="labels[c]||'未分类'"/></el-select>
+<el-select v-model="logStatus" clearable placeholder="全部决策状态" style="width:160px"><el-option v-for="s in ['classified','fallback','failed']" :key="s" :value="s" :label="labels[s]"/></el-select>
+<el-input v-model="logOperation" placeholder="请求类型，如chat" clearable style="width:170px"/>
+<el-input v-model="logModel" placeholder="选中逻辑模型" clearable style="width:190px"/>
+</template>
+<el-select v-model="days" style="width:140px" @change="range=null"><el-option :value="1" label="最近24小时"/><el-option :value="7" label="最近7天"/><el-option :value="30" label="最近30天"/></el-select>
+<el-date-picker v-model="range" type="datetimerange" start-placeholder="开始时间" end-placeholder="结束时间"/>
+</template>
+<el-button :loading="loading" @click="page=1;load()">{{view==='configs'||view==='samples'?'刷新':'查询'}}</el-button>
+</div>
+<el-table v-if="view==='configs'" :data="rows" v-loading="loading" empty-text="暂无规则，请先配置Embedding和文本模型组">
+<el-table-column prop="virtual_model" label="虚拟模型" min-width="140"/><el-table-column prop="embedding_model" label="Embedding" min-width="140"/>
+<el-table-column label="简单 / 复杂目标" min-width="200"><template #default="s">{{groupName(s.row.simple_model_group)}} / {{groupName(s.row.complex_model_group)}}</template></el-table-column>
+<el-table-column label="检索参数" min-width="170"><template #default="s">TopK {{s.row.top_k}} · 阈值 {{s.row.similarity_threshold}} · 差值 {{s.row.confidence_gap}}</template></el-table-column>
+<el-table-column label="失败策略" width="110"><template #default="s">{{labels[s.row.fallback]}}</template></el-table-column>
+<el-table-column label="状态" width="80"><template #default="s"><el-tag :type="s.row.status==='enabled'?'success':'info'">{{s.row.status==='enabled'?'启用':'禁用'}}</el-tag></template></el-table-column>
+<el-table-column label="操作" min-width="160" fixed="right"><template #default="s"><el-button link type="primary" @click="open(s.row)">编辑</el-button><el-button link @click="router.push({path:'/admin/smart-route/samples',query:{config_id:s.row.id}})">样本</el-button><el-button link type="danger" @click="remove(s.row)">删除</el-button></template></el-table-column>
+<template #empty><EmptyState title="暂无规则，请先配置Embedding和文本模型组" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
+<template v-else-if="view==='samples'">
+<p class="muted">状态每5秒刷新。只使用就绪且版本匹配的向量；更改Embedding模型会重建样本。管理员样本向量化使用全局和账号并发，实际用量在调用日志中独立记录。</p>
+<el-table :data="rows" v-loading="loading" ref="sampleTable" row-key="id" @selection-change="selected=$event" empty-text="暂无样本"><el-table-column type="selection" width="45" :reserve-selection="true"/><el-table-column prop="id" label="ID" width="80"/><el-table-column prop="prompt" label="样本文本" min-width="240" show-overflow-tooltip/><el-table-column label="单样本阈值" width="120"><template #default="s">{{s.row.similarity_threshold??'继承全局'}}</template></el-table-column><el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip/>
+<el-table-column label="类别 / 目标组" min-width="150"><template #default="s">{{labels[s.row.classification]}} · #{{s.row.model_group_id}}</template></el-table-column>
+<el-table-column label="向量状态" min-width="170"><template #default="s"><el-tag :type="s.row.vector_status==='ready'?'success':s.row.vector_status==='failed'?'danger':'info'">{{!s.row.vector_requested&&s.row.vector_status==='pending'?labels.not_built:labels[s.row.vector_status]}}</el-tag><p v-if="s.row.vector_error" class="muted">{{s.row.vector_error}}</p><router-link v-if="s.row.vector_request_id" :to="'/admin/call-logs/'+s.row.vector_request_id" class="route-link">查看向量调用</router-link></template></el-table-column>
+<el-table-column label="操作" min-width="210" fixed="right"><template #default="s"><el-button link @click="sampleOpen(s.row)">编辑</el-button><el-button link type="primary" @click="retry(s.row)">重新向量化</el-button><el-button link type="danger" @click="sampleRemove(s.row)">删除</el-button></template></el-table-column><template #empty><EmptyState title="暂无样本" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
+</template>
+<el-table v-else-if="view==='logs'" :data="rows" v-loading="loading" empty-text="所选范围暂无路由决策">
+<el-table-column label="Request ID" min-width="230"><template #default="s"><el-button link type="primary" @click="detail=s.row">{{s.row.request_id}}</el-button></template></el-table-column><el-table-column prop="virtual_model" label="虚拟模型" min-width="130"/>
+<el-table-column label="结果" width="110"><template #default="s">{{labels[s.row.status]}}</template></el-table-column><el-table-column label="类别" width="110"><template #default="s">{{labels[s.row.classification]||'—'}}</template></el-table-column>
+<el-table-column prop="selected_group_name" label="选中模型组" min-width="140"/><el-table-column label="相似度" width="100"><template #default="s">{{s.row.similarity?.toFixed(4)??'—'}}</template></el-table-column><el-table-column prop="elapsed_ms" label="决策耗时 ms" width="130"/>
+<el-table-column prop="operation" label="请求类型" width="110"/><el-table-column prop="selected_model" label="选中模型" min-width="160"/>
+<el-table-column label="时间" min-width="160"><template #default="s">{{formatDate(s.row.created_at)}}</template></el-table-column><template #empty><EmptyState title="所选范围暂无路由决策" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
+<template v-else>
+<div class="route-cards"><div>决策数<strong>{{summary.decisions??0}}</strong></div><div>真实请求数<strong>{{summary.real_requests??0}}</strong></div><div>失败数<strong>{{summary.failures??0}}</strong></div><div>总 Token<strong>{{summary.total_tokens??'—'}}</strong></div><div>平均 Token<strong>{{summary.average_tokens?.toFixed(2)??'—'}}</strong></div><div>累计决策耗时 ms<strong>{{summary.elapsed_ms?.toFixed(2)??0}}</strong></div></div>
+<p class="muted">{{statsRange?.metric_scope}}。仅统计父推理请求的Token；未上报用量不估算，已上报 {{summary.usage_count??0}} 条。</p>
+<el-radio-group v-model="distribution" aria-label="统计分布维度"><el-radio-button value="classification">按标签分布</el-radio-button><el-radio-button value="model">按模型分布</el-radio-button><el-radio-button value="tokens">按总 Token 分布</el-radio-button></el-radio-group>
+<el-table :data="distributionRows" empty-text="暂无分布数据" style="margin:16px 0"><el-table-column label="维度"><template #default="s">{{distributionName(s.row.name)}}</template></el-table-column><el-table-column prop="decisions" label="决策数"/><el-table-column prop="real_requests" label="真实请求数"/><el-table-column label="占比"><template #default="s">{{summary.decisions?(s.row.decisions/summary.decisions*100).toFixed(1)+'%':'—'}}</template></el-table-column><el-table-column label="总 Token"><template #default="s">{{s.row.total_tokens??'未上报'}} · {{s.row.usage_count}} 条已上报</template></el-table-column></el-table>
+<el-table :data="rows" v-loading="loading" empty-text="所选范围暂无路由统计"><el-table-column label="分类" min-width="130"><template #default="s">{{labels[s.row.classification]||'未分类'}}</template></el-table-column><el-table-column label="状态" width="100"><template #default="s">{{labels[s.row.status]}}</template></el-table-column><el-table-column prop="selected_group_name" label="模型组" min-width="140"/><el-table-column prop="requests" label="请求数" width="90"/><el-table-column label="平均相似度" width="130"><template #default="s">{{s.row.similarity?.toFixed(4)??'—'}}</template></el-table-column><el-table-column label="平均决策耗时 ms" width="160"><template #default="s">{{s.row.elapsed_ms?.toFixed(2)??'—'}}</template></el-table-column><el-table-column label="已上报Token" width="140"><template #default="s">{{s.row.usage_count?s.row.total_tokens:'—'}} · {{s.row.usage_count}}条</template></el-table-column><template #empty><EmptyState title="所选范围暂无路由统计" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
+<el-button v-if="virtual&&statsRange" link type="primary" @click="router.push({path:'/admin/usage',query:{model:virtual,start:statsRange.start,end:statsRange.end}})">查看该虚拟模型对应的推理用量</el-button>
+</template>
+<el-pagination v-if="view==='samples'||view==='logs'" v-model:current-page="page" :total="total" :page-size="20" layout="total,prev,pager,next" style="margin-top:24px" @current-change="load"/>
+</div>
+<el-dialog v-model="previewDialog" title="决策预览" width="720px" :close-on-click-modal="!previewLoading"><el-input v-model="previewText" type="textarea" :rows="6" maxlength="16000" show-word-limit placeholder="输入需要分类的请求文本" :disabled="previewLoading"/><p class="muted">预览使用当前规则和已就绪样本，不执行文本生成，不自动保存样本。向量请求的用量记录在调用日志。</p><el-checkbox v-model="previewConsent" :disabled="previewLoading">确认发起一次向量请求，可能产生用量</el-checkbox><template v-if="previewResult"><p>{{labels[previewResult.status]}} · {{labels[previewResult.classification]||'未分类'}} · {{previewResult.selected_group_name||'未选择目标组'}}</p><p>置信度 {{previewResult.similarity?.toFixed(4)??'—'}} · {{previewResult.elapsed_ms}} ms</p><p class="muted">{{previewResult.reason||'达到阈值'}} · 候选模型 {{previewResult.candidate_models.join(' / ')||'—'}}</p><el-table :data="previewResult.evidence" empty-text="无有效命中样本"><el-table-column prop="sample_id" label="样本ID"/><el-table-column label="标签"><template #default="s">{{labels[s.row.classification]}}</template></el-table-column><el-table-column label="相似度"><template #default="s">{{s.row.similarity.toFixed(6)}}</template></el-table-column></el-table><router-link :to="'/admin/call-logs/'+previewResult.embedding_request_id" class="route-link">查看向量请求用量</router-link></template><template #footer><el-button @click="previewDialog=false" :disabled="previewLoading">关闭</el-button><el-button type="primary" :loading="previewLoading" :disabled="!previewConsent||!previewText.trim()" @click="previewRoute">预览</el-button></template></el-dialog>
+<el-drawer v-model="dialog" :title="editing?'编辑路由规则':'新增路由规则'" size="640px"><el-form label-width="120px">
+<el-form-item label="虚拟模型"><el-input v-model="form.virtual_model" :disabled="!!editing" maxlength="100"/></el-form-item>
+<el-form-item label="Embedding模型"><el-select v-model="form.embedding_model" filterable style="width:100%"><el-option v-for="m in models" :key="m.name" :value="m.name" :label="m.name"/></el-select></el-form-item>
+<el-form-item v-for="key in ['simple_model_group','complex_model_group']" :key="key" :label="key==='simple_model_group'?'简单任务组':'复杂任务组'"><el-select v-model="(form as any)[key]" filterable style="width:100%"><el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name" :disabled="g.status!=='enabled'"/></el-select></el-form-item>
+<el-form-item label="TopK"><el-input-number v-model="form.top_k" :min="1" :max="50"/></el-form-item><el-form-item label="相似度阈值"><el-input-number v-model="form.similarity_threshold" :min="0" :max="1" :step=".05"/></el-form-item><el-form-item label="置信差"><el-input-number v-model="form.confidence_gap" :min="0" :max="1" :step=".05"/></el-form-item>
+<el-form-item label="失败策略"><el-select v-model="form.fallback"><el-option label="返回错误" value="error"/><el-option label="转简单任务组" value="simple"/><el-option label="转复杂任务组" value="complex"/></el-select></el-form-item><el-form-item label="状态"><el-select v-model="form.status"><el-option label="禁用" value="disabled"/><el-option label="启用" value="enabled"/></el-select></el-form-item>
+<p class="muted">目标组须启用、有可用文本映射且不含虚拟模型。保存后将虚拟模型加入独立模型组，再授权给用户组。</p></el-form><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template></el-drawer>
+<el-dialog v-model="sampleDialog" :title="sampleEditing?'编辑样本':'新增样本'" width="620px"><el-form label-width="80px"><el-form-item label="Prompt"><el-input v-model="sample.prompt" type="textarea" :rows="6" maxlength="65536" show-word-limit/></el-form-item><el-form-item label="标签"><el-select v-model="sample.classification"><el-option label="简单任务" value="simple"/><el-option label="复杂任务" value="complex"/></el-select></el-form-item><el-form-item label="单样本阈值"><el-input-number v-model="sample.similarity_threshold" :min="0" :max="1" :step=".05" :precision="2" placeholder="继承全局"/><el-button text @click="sample.similarity_threshold=null">继承全局</el-button></el-form-item><el-form-item label="备注"><el-input v-model="sample.remark" type="textarea" maxlength="2000"/></el-form-item><el-checkbox v-model="sample.build_vector">保存后生成向量</el-checkbox><p class="muted">构建向量可能产生上游用量。未构建的样本不参与匹配。</p></el-form><template #footer><el-button @click="sampleDialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="sampleSave">保存</el-button></template></el-dialog>
+<el-dialog v-model="importDialog" title="批量新增 / CSV导入" width="650px"><p class="muted">UTF-8 CSV，表头prompt,classification，类别为simple或complex；每批最多500条，文件最多2MB。重复或错误会拒绝整批。</p><input type="file" accept=".csv,text/csv" aria-label="选择CSV文件" @change="file"/><el-input v-model="csv" type="textarea" :rows="10" style="margin-top:16px"/><el-checkbox v-model="buildCSV" style="margin-top:16px">保存后生成向量</el-checkbox><template #footer><el-button @click="importDialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="importCSV">保存</el-button></template></el-dialog>
+<el-dialog :model-value="!!detail" title="路由决策详情" width="750px" @close="detail=null"><template v-if="detail"><p>{{detail.request_id}} · {{detail.virtual_model}}</p><p>{{labels[detail.status]}} · {{labels[detail.classification]||'未分类'}} · {{detail.selected_group_name||'未选择目标'}}</p><p class="muted">{{detail.reason||'达到相似度与置信差阈值'}} · TopK {{detail.top_k}} · {{detail.elapsed_ms}} ms</p><router-link class="route-link" :to="'/admin/call-logs/'+detail.request_id">查看父请求调用日志 →</router-link><p v-if="detail.embedding_request_id"><router-link class="route-link" :to="'/admin/call-logs/'+detail.embedding_request_id">查看Embedding子调用 →</router-link></p><el-table :data="detail.evidence" empty-text="未取得有效检索证据"><el-table-column prop="sample_id" label="样本ID"/><el-table-column label="类别"><template #default="s">{{labels[s.row.classification]}}</template></el-table-column><el-table-column label="余弦相似度"><template #default="s">{{s.row.similarity.toFixed(6)}}</template></el-table-column><template #empty><EmptyState title="未取得有效检索证据" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table><p class="muted">证据保留样本ID及分类快照，不保存客户端Prompt或生成内容。</p></template></el-dialog>
+</div></template>
+<style scoped>.route-nav{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0}.route-nav a{padding:9px 16px;border-radius:8px;background:var(--surface);border:1px solid #dae4f2}.route-nav .router-link-exact-active{background:#24528a;color:white}.route-link{color:var(--el-color-primary)}.route-cards{display:flex;gap:18px;margin:20px 0}.route-cards>div{flex:1;padding:20px;background:var(--soft);border-radius:8px;color:var(--muted)}.route-cards strong{display:block;font-size:28px;color:var(--text);margin-top:12px}</style>
+
+
+
+<style scoped>.route-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}@media(min-width:1500px){.route-cards{grid-template-columns:repeat(6,minmax(0,1fr))}}@media(max-width:650px){.route-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>

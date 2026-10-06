@@ -1,0 +1,22 @@
+Stage 6 validation — 2026-10-04
+Production: 192.168.31.97:/opt/AIGateway; http://192.168.31.97:18080
+Image: helidata-ai-gateway:stage6; application 0.6.0; migration 0006
+
+PASS: Vue/TypeScript/Vite and Docker build; Python compilation.
+PASS: actual HTTP discovery/dedup, Anthropic pagination, manual fallback, multi-provider/multi-mapping and type/ownership constraints.
+PASS: ordered multi-model groups, persisted reorder, user/group/Key catalog isolation and live disable/revoke candidate filtering.
+PASS: a second ungranted enabled model group remains hidden from the owner catalog.
+PASS: mapping soft-delete/recreate, referenced group protection, discovery race safety and model group delete.
+PASS: disposable database 0001 -> 0006, downgrade/re-upgrade; original user/password, stage5 provider ciphertext and existing model group fields preserved on upgrade.
+PASS: new mode-0700 host volume initializes migration 0006 with protected directories; random admin initial password and first-change enforcement.
+PASS: stage5 regression — provider CRUD, eight types, admin/user boundary, AES-256-GCM, sanitized failures, redirects blocked, disable blocks network, stale test race, Anthropic/Ollama, HTTP proxy, secret replacement/clear, audit, soft deletion.
+PASS: browser model group list/edit/in-memory reorder/cancel; account mappings and manual input fields; ordinary user catalog and absence of admin menu; logout.
+Screenshots: docs/stage6-model-groups.jpg and docs/stage6-portal.jpg (temporary QA fixtures, subsequently removed).
+
+Server logs: acceptance-stage6.log; acceptance-stage6-migrations.log; acceptance-stage6-startup.log; acceptance-stage5-regression-stage6.log.
+Backup: /data/backup/stage6-before-upgrade.sql.
+Original user/password-state SHA256 comparison performed without exposing hashes or resetting credentials.
+Master Key remains persisted on server; no credentials exported into source or docs.
+Temporary fixtures and test containers removed. Production health checked after cleanup.
+
+Limit: isolated HTTP fixtures verify protocol behavior, not live paid model generation. No real upstream key supplied. Pipeline is stage7; generation/streaming/scheduling/failover/concurrency/quota are subsequent stages.

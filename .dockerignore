@@ -1,0 +1,11 @@
+.git
+.deployment
+data
+**/node_modules
+**/__pycache__
+*.xlsx
+
+.stage1-fresh-data
+*.tar.gz
+*stage1*.log
+lock-build.log

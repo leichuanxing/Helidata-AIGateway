@@ -1,0 +1,16 @@
+Stage7 validation — 2026-10-04
+App0.7.0; image helidata-ai-gateway:stage7; migration0006 (no schema change).
+PASS: Python compile, Vue/TypeScript/Vite, Docker build.
+PASS: live Nginx/FastAPI model list and zero-network preflight; actual DB API Key last-use update.
+PASS: live model authorization, user/Key/group/model-group disable, first-password enforcement, provider health/cooldown filtering.
+PASS: 12 concurrent preflights receive unique server-generated Request IDs.
+PASS: unified 401/403/404/405/422/503 errors, request header/body ID agreement, no-store, input/credential/upstream-name privacy.
+PASS: injected unexpected500 through ASGI is sanitized and has X-Request-ID; matching pipeline failure log.
+PASS: success pipeline stages and HTTP log share Request ID; captured logs contain no key/raw payload/upstream model.
+PASS: stage6 acceptance regression — mapping/discovery/pagination/permission/order/disable/delete/race.
+PASS: fresh0700 volume startup, migration0006, random admin password/first-change and protected directories.
+Production health phase7 all OK; original user/password state preserved; temporary test data/container cleanup.
+Logs: acceptance-stage7.log; acceptance-stage6-regression-stage7.log; acceptance-stage7-startup.log.
+Backup: /data/backup/stage7-before-upgrade.sql.
+Browser: login page renders correctly; health-status and /v1/models navigation blocked by browser client. These browser checks remain unverified; server HTTP tests cover health/errors. Screenshot: docs/stage7-login.jpg.
+Limits: preflight does not generate; quota/concurrency/compliance/smart-routing explicitly deferred; usage only elapsed time and call logs currently operational logs. No live paid inference. Stage8 is next.

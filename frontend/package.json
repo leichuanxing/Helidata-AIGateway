@@ -1,0 +1,12 @@
+{
+  "name": "helidata-ai-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "vite --host", "build": "vue-tsc --noEmit && vite build"},
+  "dependencies": {
+    "vue": "3.5.13", "element-plus": "2.9.9", "pinia": "3.0.2",
+    "vue-router": "4.5.1", "axios": "1.9.0", "echarts": "5.6.0"
+  },
+  "devDependencies": {"typescript": "5.8.3", "vite": "6.3.5", "@vitejs/plugin-vue": "5.2.4", "vue-tsc": "2.2.10"}
+}

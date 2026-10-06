@@ -1,0 +1,3 @@
+PASS: actual Stage17 volume upgrade installs0016; user credential states and Master Key unchanged
+PASS: 0016 downgrade/re-upgrade/idempotency preserves Stage17 routing/compliance/audit/settings snapshots, six-operation call/usage facts, credentials and extension
+PASS: fresh mode-0700 host volume bootstraps non-superuser DB, protected secrets, pgvector and all migrations

@@ -1,0 +1,48 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+database:
+  host: 127.0.0.1
+  port: 5432
+  database: helidata_gateway
+  username: helidata
+  password: generated-on-first-start
+  pool_size: 10
+  max_overflow: 10
+  connect_timeout: 5
+  pool_timeout: 10
+  pool_recycle: 1800
+  statement_timeout: 30
+redis:
+  host: 127.0.0.1
+  port: 6379
+  socket_timeout: 3
+gateway:
+  max_concurrency: 500
+  queue_size: 1000
+  queue_timeout: 30
+  stream_idle_timeout: 300
+  http_max_connections: 1024
+  http_max_keepalive: 64
+  http_keepalive_expiry: 30
+  http_proxy_pools: 16
+  http_connect_timeout: 10
+  http_write_timeout: 10
+  http_pool_timeout: 10
+  max_body_bytes: 10485760
+  preparation_queue_size: 1000
+  preparation_timeout: 30
+  nonstream_timeout: 120
+  sticky_timeout: 1800
+  health_check_interval: 0
+  failure_threshold: 2
+  cooldown_seconds: 30
+security:
+  jwt_expire: 7200
+  jwt_secret: generated-on-first-start
+logging:
+  level: INFO
+  save_request_body: false
+  save_response_body: false
+  retention_days: 366
+  redaction_rules: []

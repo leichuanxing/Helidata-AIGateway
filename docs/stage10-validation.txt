@@ -1,0 +1,28 @@
+Stage10 validation — 2026-10-05 Asia/Shanghai (remote logs use UTC2026-10-04).
+Application0.10.0; helidata-ai-gateway:stage10; Migration0006, no new schema.
+
+PASS: Docker/Vue/TypeScript/Vite build and backend Python compilation.
+PASS: actual Nginx/FastAPI/PostgreSQL/Redis/HTTPX account failover A->B, common Request ID, requested alias restored.
+PASS: exhausted same-model accounts -> ordered same-type authorized next model; removed membership cannot be used.
+PASS: Sticky chooses previous successful account ahead of priority; key uses API Key id/IP hash/model with1800s TTL; no API Key plaintext.
+PASS: actual in-flight account count, full sticky account rescheduled, equal-priority lower load selected, terminal slots released.
+PASS: 24 concurrent Redis admissions enforce max=1; expired owner reclaimed; live owner renewed and released.
+PASS: injected Redis admission failure returns SCHEDULER_UNAVAILABLE; injected renewal failure cancels owner and releases slot.
+PASS: regular consecutive failures cool30/60/120/300 seconds, cooling excludes new requests, expired cooldown allows one recovery probe, success resets failures/health.
+PASS: 429 cools immediately and escalates30/60/120/300; cooldown expiry tested by backdating fixture records, production seconds unchanged.
+PASS: hard auth failure Unavailable; parameter400 not retried or counted as account failure; Disabled state; explicit successful connection test clears Cooling.
+PASS: stale in-flight failure cannot overwrite edited config-version health.
+PASS: streaming header failure can failover; emitted stream never retries; terminal stream failure updates health; no fixture connection/account slot leaks.
+PASS: nonstream regression—actual curl/HTTPX, optional fields/tool/multimodal, live auth/model states, unified upstream errors/limits/timeout, concurrent request IDs.
+PASS: streaming regression—actual curl -N, framing/model/tool/usage, header/midstream errors, 12 idle-body and1 pre-header cancellation, ASGI2.4, resource leases/DB lifetime/HTTP closure.
+PASS: all13 cancellation requests have one client_cancelled terminal log with matching Request ID.
+PASS: Gateway Core—model list/preflight, zero upstream I/O in preflight, auth/status/permission, concurrent IDs, unified errors/unexpected500/log privacy.
+PASS: Provider regression—CRUD, eight types, admin/user boundary, AES-GCM, native discovery/proxy/errors/privacy/config race/soft delete.
+PASS: fresh0700 volume startup,0006 migration, random initial admin login/mandatory password change; isolated container/data volume removed.
+PASS: original user/password state summary unchanged; temporary stage10 users/providers=0; enabled real providers=0; production phase10 all health checks OK; uptime-kuma remains healthy.
+
+Remote logs: build-stage10.log, acceptance-stage10.log, acceptance-stage10-nonstream.log, acceptance-stage10-streaming.log, acceptance-stage10-cancellation-log.txt, acceptance-stage10-core.log, acceptance-stage10-provider.log, acceptance-stage10-startup.log.
+Backup: /data/backup/stage10-before-upgrade.sql.
+Production: http://192.168.31.97:18080
+UI scope: scheduling state/current concurrency added to list/detail; compiled and validated via real admin HTTP, no new browser visual acceptance.
+Limit: no enabled real paid provider, no paid-generation/cache-hit benefit validation. Account slots enforced; Gateway/UserGroup/ApiKey concurrency/queues/quota remain stage11. Business call logs/statistics remain stages12–13.

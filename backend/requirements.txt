@@ -1,0 +1,17 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+pydantic==2.11.4
+httpx==0.28.1
+SQLAlchemy==2.0.40
+asyncpg==0.30.0
+alembic==1.15.2
+redis==5.2.1
+PyYAML==6.0.2
+argon2-cffi==23.1.0
+PyJWT==2.10.1
+cryptography==44.0.3
+
+regex==2025.11.3
+onnxruntime==1.23.2
+tokenizers==0.22.2
+numpy==2.2.6
