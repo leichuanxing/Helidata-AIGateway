@@ -11,7 +11,7 @@ PostgreSQL15使用UTF-8，应用以非超级用户访问，运行在容器内127
 | 调用 | call_logs，request_id唯一；标量身份ID及名称快照保留删除后的历史，trace为脱敏JSONB |
 | 统计 | usage_hourly、usage_daily，bucket加用户/组/Key/Provider/请求模型/逻辑模型/协议/操作复合主键；累计分子和有效样本数用于加权平均 |
 | 路由 | route_configs、route_samples、route_vectors、route_decisions；样本版本/向量代际/模型/维度必须一致，决策保存证据快照 |
-| 合规 | sensitive_words、review_samples、review_vectors、compliance_policies、compliance_logs；本地384维向量，日志保存风险及版本快照 |
+| 合规 | sensitive_words、review_samples、review_vectors、compliance_policies、compliance_logs；本地384维或共享上游向量，日志保存策略、风险、规则证据、协议及审核阶段状态快照 |
 | 运维 | system_settings键/JSONB值/范围；audit_logs记录事件时身份快照；backups保存任务状态/文件SHA256/体积/时间，不在库内存备份包 |
 
 历史标量ID/快照不会随业务对象软删除被改写。API Key仅存不可逆摘要；Provider密文依赖独立32字节Master Key，不依赖JWT签名密钥。库及配套Master Key备份必须一起保留。

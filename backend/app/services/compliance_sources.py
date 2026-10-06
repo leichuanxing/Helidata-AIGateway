@@ -18,5 +18,5 @@ def word_matches(words,text):
   try:
    hit=normalized(word['pattern']) in folded if word['kind']=='text' else bool(expression(word['kind'],word['pattern']).search(folded if word['kind']=='wildcard' else text,timeout=min(.02,remain)))
   except TimeoutError:raise APIError(503,'COMPLIANCE_MATCH_TIMEOUT','正则审核超时，请修改规则') from None
-  if hit:results.append({'source':'word','id':word['id'],'kind':word['kind'],'risk':word['risk']})
+  if hit:results.append({'source':'word','id':word['id'],'kind':word['kind'],'risk':word['risk'],'text':word['pattern'],'similarity':1})
  return results

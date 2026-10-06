@@ -41,10 +41,10 @@ def content(ctx):
  return result
 async def load(db,ctx):
  rows=(await db.scalars(select(CompliancePolicy).where(CompliancePolicy.status=='enabled').order_by(CompliancePolicy.id))).all()
- policies=[{k:getattr(r,k) for k in ('id','name','action','word_ids','sample_ids','group_ids','models','threshold')} for r in rows if (not r.group_ids or ctx.group.id in r.group_ids) and (not r.models or ctx.logical_model in r.models)]
+ policies=[{k:getattr(r,k) for k in ('id','name','action','risk','description','word_ids','sample_ids','group_ids','models','threshold')} for r in rows if (not r.group_ids or ctx.group.id in r.group_ids) and (not r.models or ctx.logical_model in r.models)]
  ids={i for p in policies for i in p['word_ids']};samples={i for p in policies for i in p['sample_ids']}
  words=[{k:getattr(r,k) for k in ('id','pattern','kind','risk','status')} for r in (await db.scalars(select(AuditWord).where(AuditWord.id.in_(ids)).order_by(AuditWord.id))).all()] if ids else []
- source=[{k:getattr(r,k) for k in ('id','revision','vector_status','risk')} for r in (await db.scalars(select(AuditSample).where(AuditSample.id.in_(samples)).order_by(AuditSample.id))).all()] if samples else []
+ source=[{k:getattr(r,k) for k in ('id','revision','vector_status','risk','status','text')} for r in (await db.scalars(select(AuditSample).where(AuditSample.id.in_(samples)).order_by(AuditSample.id))).all()] if samples else []
  from app.services.operations_settings import governance
  if governance['semantic_threshold'] is not None:
   for policy in policies:policy['threshold']=governance['semantic_threshold']
@@ -53,10 +53,10 @@ async def semantic(db,ids,vectors):
  result={}
  for vector in vectors:
   encoded,_=encode_vector(vector)
-  rows=(await db.execute(text("SELECT s.id,s.risk,1-(v.embedding <=> CAST(:v AS vector)) AS similarity FROM review_samples s JOIN review_vectors v ON s.id=v.sample_id WHERE s.id=ANY(CAST(:ids AS bigint[])) AND s.vector_status='ready' AND v.sample_revision=s.revision AND v.model_version=:model AND vector_dims(v.embedding)=:dimensions ORDER BY similarity DESC LIMIT 500"),dict(v=encoded,ids=list(ids),model=version(),dimensions=len(vector)))).mappings()
+  rows=(await db.execute(text("SELECT s.id,s.risk,s.text,1-(v.embedding <=> CAST(:v AS vector)) AS similarity FROM review_samples s JOIN review_vectors v ON s.id=v.sample_id WHERE s.id=ANY(CAST(:ids AS bigint[])) AND s.status='enabled' AND s.vector_status='ready' AND v.sample_revision=s.revision AND v.model_version=:model AND vector_dims(v.embedding)=:dimensions ORDER BY similarity DESC LIMIT 500"),dict(v=encoded,ids=list(ids),model=version(),dimensions=len(vector)))).mappings()
   for row in rows:
    old=result.get(row['id'])
-   if old is None or row['similarity']>old['similarity']:result[row['id']]={'source':'sample','id':row['id'],'risk':row['risk'],'similarity':max(-1,min(1,row['similarity']))}
+   if old is None or row['similarity']>old['similarity']:result[row['id']]={'source':'sample','id':row['id'],'risk':row['risk'],'text':row['text'],'similarity':max(-1,min(1,row['similarity']))}
  return result
 async def check(db,ctx):
  from app.services.operations_settings import governance
@@ -65,33 +65,33 @@ async def check(db,ctx):
  if getattr(ctx.request.state,'compliance_checked',False):ctx.deferred['compliance']='parent_checked';return
  started=monotonic();snapshot=await load(db,ctx);policies,words,samples=snapshot
  if not policies:ctx.deferred['compliance']='not_applicable';return
- value=content(ctx)
  active=[w for w in words if w['status']=='enabled']
+ value=content(ctx) if active or any(s['status']=='enabled' and s['vector_status']=='ready' for s in samples) else ''
  hits=await asyncio.to_thread(word_matches,active,value)
  matches=[]
  for p in policies:
-  selected=[h for h in hits if h['id'] in p['word_ids']]
-  if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'hit_count':len(selected),'evidence':selected[:20]})
+  selected=[dict(h,risk=p['risk'] or h['risk']) for h in hits if h['id'] in p['word_ids']]
+  if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'risk':p['risk'],'description':p['description'],'threshold':p['threshold'],'hit_count':len(selected),'evidence':selected[:20]})
  # Cheap blocking rules always prevent even local semantic work.
  if not any(m['action']=='block' for m in matches):
-  semantic_ids={i for p in policies for i in p['sample_ids']}
+  requested={i for p in policies for i in p['sample_ids']}
+  semantic_ids={s['id'] for s in samples if s['id'] in requested and s['status']=='enabled' and s['vector_status']=='ready'}
   if semantic_ids:
-   if {s['id'] for s in samples if s['vector_status']=='ready'}!=semantic_ids:raise APIError(503,'COMPLIANCE_SAMPLES_NOT_READY','审核样本尚未全部就绪，请联系管理员')
    await db.commit()
    vectors=await embed(value,ctx.user.id,ctx.client_ip)
    async with session_factory() as local_db:
     if await load(local_db,ctx)!=snapshot:raise APIError(409,'COMPLIANCE_CHANGED','审核策略或样本已变化，请重试')
     found=await semantic(local_db,semantic_ids,vectors)
    for p in policies:
-    selected=[h for i,h in found.items() if i in p['sample_ids'] and h['similarity']>=p['threshold']]
-    if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'hit_count':len(selected),'evidence':sorted(selected,key=lambda h:-h['similarity'])[:20]})
+    selected=[dict(h,risk=p['risk'] or h['risk']) for i,h in found.items() if i in p['sample_ids'] and h['similarity']>=p['threshold']]
+    if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'risk':p['risk'],'description':p['description'],'threshold':p['threshold'],'hit_count':len(selected),'evidence':sorted(selected,key=lambda h:-h['similarity'])[:20]})
  action='block' if any(m['action']=='block' for m in matches) else 'audit' if matches else 'pass'
  ctx.deferred['compliance']={'action':action,'matches':matches,'elapsed_ms':round((monotonic()-started)*1000,2),'log_delivery':'not_needed'}
- if matches:
+ if policies:
   # Release parent's DB connection before independently delivering an audit log.
   await db.commit()
   with anyio.CancelScope(shield=True):
-   delivery=await compliance_logs.write(dict(request_id=ctx.request_id,user_id=ctx.user.id,group_id=ctx.group.id,model=ctx.logical_model,action=action,matches=matches,elapsed_ms=ctx.deferred['compliance']['elapsed_ms'],created_at=ctx.received_at))
+   delivery=await compliance_logs.write(dict(request_id=ctx.request_id,user_id=ctx.user.id,group_id=ctx.group.id,model=ctx.logical_model,protocol=ctx.operation,status_code=403 if action=='block' else 200,action=action,matches=matches,elapsed_ms=ctx.deferred['compliance']['elapsed_ms'],created_at=ctx.received_at))
   ctx.deferred['compliance']['log_delivery']=delivery
  if action=='block':raise APIError(403,'CONTENT_BLOCKED','请求命中内容阻断策略')
  ctx.request.state.compliance_checked=True
