@@ -7,7 +7,8 @@ from app.providers.operations import compatible
 from app.core.exceptions import APIError
 
 def category_mapping(account,item):
-    if account.protocol_type and protocol_category(item.model_type)!=account.protocol_type:
+    actual=item.model_type if account.protocol_type=='multimodal' else protocol_category(item.model_type)
+    if account.protocol_type and actual!=account.protocol_type:
         raise APIError(422,'PROVIDER_MODEL_TYPE_MISMATCH','模型映射类型须与账号协议类型一致')
 
 async def protect_removed(db,account,names):

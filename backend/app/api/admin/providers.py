@@ -35,7 +35,7 @@ async def public_rows(rows,db):
     for m in mappings:grouped[m.provider_id].append(m)
     result=[]
     for row in rows:
-        items=grouped[row.id];categories=sorted({protocol_category(m.model_type) for m in items})
+        items=grouped[row.id];categories=sorted({m.model_type if m.model_type=='multimodal' else protocol_category(m.model_type) for m in items})
         result.append({**public_provider(row),'current_concurrency':counts.get(row.id),'models':[public_mapping(m) for m in items],
             'effective_protocol_type':row.protocol_type or (categories[0] if len(categories)==1 else 'mixed' if categories else None)})
     return result
@@ -118,7 +118,7 @@ async def discover_draft(body: ProviderDiscovery,request: Request,actor=Depends(
 
 
 @router.get('')
-async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=100),status: str=Query('',max_length=20),provider_type: str=Query('',max_length=40),protocol: str=Query('',max_length=40),health_status: str=Query('',max_length=20),protocol_type: Literal['','text','image','vector']=''):
+async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=100),status: str=Query('',max_length=20),provider_type: str=Query('',max_length=40),protocol: str=Query('',max_length=40),health_status: str=Query('',max_length=20),protocol_type: Literal['','text','multimodal','image','vector']=''):
     query=select(Provider).where(Provider.deleted_at.is_(None))
     if q: query=query.where(or_(Provider.name.icontains(q,autoescape=True),select(ProviderModelMapping.id).where(
         ProviderModelMapping.provider_id==Provider.id,ProviderModelMapping.deleted_at.is_(None),or_(ProviderModelMapping.logical_model.icontains(q,autoescape=True),ProviderModelMapping.upstream_model.icontains(q,autoescape=True))).exists()))
@@ -131,7 +131,7 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),page: int
         query=query.where(or_(and_(or_(Provider.protocol_config.is_(None),func.jsonb_typeof(Provider.protocol_config)=='null'),Provider.protocol==legacy),
             *[Provider.protocol_config.has_key(n) for n in names]))
     if protocol_type:
-        kinds={'text':['text','reasoning','multimodal'],'image':['image'],'vector':['embedding','rerank']}[protocol_type]
+        kinds={'text':['text','reasoning'],'multimodal':['multimodal'],'image':['image'],'vector':['embedding','rerank']}[protocol_type]
         query=query.where(or_(Provider.protocol_type==protocol_type,and_(Provider.protocol_type.is_(None),select(ProviderModelMapping.id).where(
             ProviderModelMapping.provider_id==Provider.id,ProviderModelMapping.deleted_at.is_(None),ProviderModelMapping.model_type.in_(kinds)).exists())))
     if health_status: query=query.where(Provider.health_status==health_status)

@@ -4,9 +4,9 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,message} from '../api/client'
 import {modelTypes,type Mapping} from '../api/models'
 const props=defineProps<{providerId:number;enabled:boolean;category?:string|null}>()
-const allowed=computed(()=>Object.entries(modelTypes).filter(([t])=>!props.category||(props.category==='text'?['text','reasoning','multimodal'].includes(t):props.category==='image'?t==='image':['embedding','rerank'].includes(t))))
+const allowed=computed(()=>Object.entries(modelTypes).filter(([t])=>!props.category||(props.category==='multimodal'?t==='multimodal':props.category==='text'?['text','reasoning','multimodal'].includes(t):props.category==='image'?t==='image':['embedding','rerank'].includes(t))))
 const rows=ref<Mapping[]>([]),discovered=ref<string[]>([]),loading=ref(false),discovering=ref(false),dialog=ref(false),saving=ref(false),editing=ref<number|null>(null),error=ref('')
-const blank=()=>({logical_model:'',upstream_model:'',model_type:props.category==='image'?'image':props.category==='vector'?'embedding':'text',status:'enabled'})
+const blank=()=>({logical_model:'',upstream_model:'',model_type:props.category==='multimodal'?'multimodal':props.category==='image'?'image':props.category==='vector'?'embedding':'text',status:'enabled'})
 const form=reactive(blank()),base=()=>'/admin/providers/'+props.providerId+'/model-mappings'
 async function load(){loading.value=true;error.value='';try{rows.value=(await api.get(base())).data.data}catch(e){error.value=message(e)}finally{loading.value=false}}
 async function discover(){discovering.value=true;try{const r=(await api.post('/admin/providers/'+props.providerId+'/discover-models')).data.data;discovered.value=r.models.map((m:{id:string})=>m.id);ElMessage.success('发现 '+discovered.value.length+' 个真实模型')}catch(e){ElMessage.error(message(e))}finally{discovering.value=false}}

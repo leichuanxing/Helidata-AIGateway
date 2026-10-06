@@ -7,5 +7,5 @@ export const healthLabels:Record<string,string>={unknown:'未确认',healthy:'�
 export const authLabels:Record<string,string>={accepted:'请求被接受',not_configured:'未配置 Key',failed:'鉴权失败',unknown:'未确认'}
 
 export const schedulingLabels:Record<string,string>={Available:'可用',Cooling:'冷却中',Unavailable:'不可用',Disabled:'已禁用'}
-export const categoryLabels:Record<string,string>={text:'文本',image:'文生图',vector:'向量',mixed:'混合（历史账号）'}
+export const categoryLabels:Record<string,string>={text:'文本',multimodal:'多模态',image:'文生图',vector:'向量',mixed:'混合（历史账号）'}
 export const protocolNames=['openai-completions','openai-responses','anthropic-messages','openai-embeddings','openai-images','openai-rerank','ollama']

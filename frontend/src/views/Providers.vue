@@ -12,7 +12,7 @@ const category=ref(''),testDialog=ref(false),testAccount=ref<Provider|null>(null
 const visibleColumns=ref(['models','priority','concurrency','health','latency','key'])
 const columnOptions={models:'模型',priority:'优先级',concurrency:'最大并发',health:'健康 / 调度',latency:'最近延迟',key:'Key'}
 const plans=computed(()=>selectedType.value?.account_types||{standard:{name:form.provider_type==='zhipu_coding_plan'?'Coding Plan':'标准账号',base_url:selectedType.value?.base_url||''}})
-const availableCategories=computed(()=>{const ops=selectedType.value?.operations;return Object.entries(categoryLabels).filter(([k])=>k!=='mixed'&&(!ops||(k==='text'?ops.some(o=>['chat','messages','responses'].includes(o)):k==='image'?ops.includes('images'):ops.some(o=>['embeddings','rerank'].includes(o)))))})
+const availableCategories=computed(()=>{const ops=selectedType.value?.operations;return Object.entries(categoryLabels).filter(([k])=>k!=='mixed'&&(!ops||(['text','multimodal'].includes(k)?ops.some(o=>['chat','messages','responses'].includes(o)):k==='image'?ops.includes('images'):ops.some(o=>['embeddings','rerank'].includes(o)))))})
 const availableProtocols=computed(()=>form.protocol_type==='image'?['openai-images']:form.protocol_type==='vector'?['openai-embeddings',...(form.provider_type==='custom_openai'?['openai-rerank']:[])]:['openai-completions','openai-responses','anthropic-messages'])
 const mappings=ref<ProviderDraftMapping[]>([]),mappingLoading=ref(false),mappingsReady=ref(false),discovering=ref(false),discovered=ref<string[]>([]),editorVersion=ref<number|null>(null)
 const protocolOptions=computed(()=>Array.from(new Set([...availableProtocols.value,...selectedProtocols.value])))
@@ -32,7 +32,7 @@ async function open(p?:Provider&{config_version?:number}){
   editing.value=p?.id??null;editorVersion.value=p?.config_version??null;hasKey.value=p?.has_api_key||false
   Object.assign(form,blank(),p?{name:p.name,provider_type:p.provider_type,protocol:p.protocol,protocol_type:p.protocol_type,account_type:p.account_type,base_url:p.base_url,proxy:p.proxy||'',priority:p.priority,max_concurrency:p.max_concurrency,status:p.status,remark:p.remark,default_test_model:p.default_test_model||''}:{})
   loadProtocols(p)
-  mappings.value=[{logical_model:'',upstream_model:'',model_type:'text',status:'enabled'}];discovered.value=[];mappingsReady.value=!p;dialog.value=true
+  mappings.value=[{logical_model:'',upstream_model:'',model_type:form.protocol_type==='multimodal'?'multimodal':form.protocol_type==='image'?'image':form.protocol_type==='vector'?'embedding':'text',status:'enabled'}];discovered.value=[];mappingsReady.value=!p;dialog.value=true
   if(p){mappingLoading.value=true;try{const rows=(await api.get('/admin/providers/'+p.id+'/model-mappings')).data.data;if(gen!==openGeneration)return;mappings.value=rows.length?rows.map((m:ProviderDraftMapping)=>({logical_model:m.logical_model,upstream_model:m.upstream_model,model_type:m.model_type,status:m.status})):mappings.value;mappingsReady.value=true}catch(e){if(gen===openGeneration)ElMessage.error(message(e))}finally{if(gen===openGeneration)mappingLoading.value=false}}
 }
 async function discoverDraft(){
@@ -42,7 +42,7 @@ async function discoverDraft(){
 }
 function changeType(){const t=selectedType.value;if(t){form.account_type='standard';form.protocol=t.protocols.includes('openai')?'openai':t.protocols[0]||'openai';if(!availableCategories.value.some(([k])=>k===form.protocol_type))form.protocol_type=availableCategories.value[0]?.[0]||'text';form.base_url=t.base_url;loadProtocols();discovered.value=[]}}
 function changePlan(){form.base_url=plans.value[form.account_type]?.base_url||'';loadProtocols();discovered.value=[]}
-function changeCategory(){loadProtocols();discovered.value=[];for(const m of mappings.value)if(!m.logical_model&&!m.upstream_model)m.model_type=form.protocol_type==='vector'?'embedding':form.protocol_type==='image'?'image':'text';verifyAfterSave.value=false}
+function changeCategory(){const previous=Object.fromEntries(Object.entries(routes).map(([p,r])=>[p,{...r}])),prefix=previous[selectedProtocols.value[0]||'']?.path_prefix;const textual=['text','multimodal'].includes(form.protocol_type||'');if(!(textual&&selectedProtocols.value.every(p=>['openai-completions','openai-responses','anthropic-messages','ollama'].includes(p))))loadProtocols();for(const p of selectedProtocols.value){if(previous[p])routes[p]={...previous[p]};else if(prefix!==undefined)routes[p]!.path_prefix=prefix}syncProtocols();discovered.value=[];for(const m of mappings.value)if(!m.logical_model&&!m.upstream_model)m.model_type=form.protocol_type==='multimodal'?'multimodal':form.protocol_type==='vector'?'embedding':form.protocol_type==='image'?'image':'text';verifyAfterSave.value=false}
 async function openTest(p:Provider){autoTest.value=false;try{testAccount.value=(await api.get('/admin/providers/'+p.id)).data.data;testDialog.value=true}catch(e){ElMessage.error(message(e))}}
 watch(()=>mappings.value.map(m=>m.logical_model+'|'+m.status).join(','),()=>{if(mappingsReady.value&&!mappingLoading.value&&form.default_test_model&&!testModels.value.some(m=>m.logical_model===form.default_test_model))form.default_test_model=''})
 async function save(){
@@ -55,7 +55,7 @@ async function save(){
   if(!mappings.value.length||mappings.value.length>100||mappings.value.some(m=>!m.logical_model.trim()||!m.upstream_model.trim())){ElMessage.error('请填写1至100条完整模型映射');return}
   if(new Set(mappings.value.map(m=>m.logical_model.trim())).size!==mappings.value.length){ElMessage.error('请求模型名称不能重复');return}
   const categoryOf=(t:string)=>t==='image'?'image':['embedding','rerank'].includes(t)?'vector':'text'
-  if(form.protocol_type&&mappings.value.some(m=>categoryOf(m.model_type)!==form.protocol_type)){ElMessage.error('模型映射类型须与账号协议类型一致');return}
+  if(form.protocol_type&&mappings.value.some(m=>(form.protocol_type==='multimodal'?m.model_type:categoryOf(m.model_type))!==form.protocol_type)){ElMessage.error('模型映射类型须与账号协议类型一致');return}
   saving.value=true
   try{
     const payload:any={name:form.name,provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:form.base_url,proxy:form.proxy||null,priority:form.priority,max_concurrency:form.max_concurrency,status:form.status,remark:form.remark,default_test_model:form.default_test_model||null,model_mappings:mappings.value.map(m=>({...m,logical_model:m.logical_model.trim(),upstream_model:m.upstream_model.trim()}))}

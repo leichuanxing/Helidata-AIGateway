@@ -136,7 +136,7 @@ class Provider(Base):
         CheckConstraint("health_status IN ('unknown','healthy','unhealthy')",name='ck_provider_health'),
         CheckConstraint('max_concurrency > 0 AND failure_count >= 0',name='ck_provider_limits'),
         CheckConstraint("protocol IN ('openai','anthropic','ollama')",name='ck_provider_protocol'),
-        CheckConstraint("protocol_type IS NULL OR protocol_type IN ('text','image','vector')",name='ck_provider_category'),
+        CheckConstraint("protocol_type IS NULL OR protocol_type IN ('text','multimodal','image','vector')",name='ck_provider_category'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80),unique=True)
