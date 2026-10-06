@@ -106,6 +106,8 @@ async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Requ
     row=await mapping(db,provider_id,mapping_id);await canonical(db,body.logical_model,body.model_type)
     account=await provider(db,provider_id)
     category_mapping(account,body)
+    from app.services.provider_rules import protect_vector_mapping
+    protect_vector_mapping(account,row,body)
     if body.logical_model!=row.logical_model:await protect_removed(db,account,{row.logical_model})
     if account.default_test_model==row.logical_model:
         account.default_test_model=body.logical_model if body.status=='enabled' else None

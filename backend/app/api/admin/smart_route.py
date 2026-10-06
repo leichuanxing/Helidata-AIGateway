@@ -61,6 +61,8 @@ async def save(body,request,actor,db,row=None):
         if body.virtual_model!=row.virtual_model:raise APIError(409,'ROUTE_NAME_IMMUTABLE','虚拟模型名称不可修改，请新建规则')
     elif await db.get(LogicalModel,body.virtual_model):
         raise APIError(409,'ROUTE_NAME_CONFLICT','虚拟模型名称已被逻辑模型或路由占用')
+    from app.services.operations_settings import vector
+    if vector['model'] and body.embedding_model!=vector['model']:raise APIError(400,'VECTOR_MODEL_MISMATCH','路由规则需使用系统配置中的共享向量模型')
     embedding=await db.get(LogicalModel,body.embedding_model)
     if not embedding or embedding.model_type!='embedding' or not any(compatible('embeddings',p) for m,p in await candidates(db,body.embedding_model)):
         raise APIError(400,'ROUTE_EMBEDDING_UNAVAILABLE','请选择有可用OpenAI兼容映射的Embedding逻辑模型')
@@ -122,7 +124,7 @@ async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(admi
             evidence=await nearest(db,cfg,vector)
         choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
         classification=choice.classification;reason=choice.reason;status='classified' if classification else 'failed'
-        if classification is None and cfg.fallback!='error':classification=cfg.fallback;status='fallback';source='fallback'
+        if classification is None:classification='simple';status='fallback'
         if classification:
             group_id=cfg.simple_model_group if classification=='simple' else cfg.complex_model_group
             group,models=await real_members(db,group_id,'chat');group_name=group.name

@@ -52,6 +52,7 @@ class Basic(Section):
 
 
 class GatewayOptions(Section):
+    protocol_conversion:bool=True
     max_concurrency:int=Field(default=500,ge=1,le=100000)
     queue_size:int=Field(default=1000,ge=0,le=100000)
     queue_timeout:int=Field(default=30,ge=1,le=3600)
@@ -75,7 +76,7 @@ class SecurityOptions(Section):
 class LogOptions(Section):
     save_request_body:bool=False
     save_response_body:bool=False
-    retention_days:int=Field(default=366,ge=366,le=3650)
+    retention_days:int=Field(default=366,ge=1,le=3650)
     redaction_rules:list[str]=Field(default_factory=list,max_length=20)
 
     @field_validator('redaction_rules')
@@ -88,9 +89,35 @@ class LogOptions(Section):
         return value
 
 
+class VectorOptions(Section):
+    provider_id:int|None=Field(default=None,gt=0)
+    model:str=Field(default='',max_length=100)
+
+class GovernanceOptions(Section):
+    smart_route_enabled:bool=True
+    compliance_enabled:bool=True
+    semantic_threshold:float|None=Field(default=None,ge=0,le=1,allow_inf_nan=False)
+
+class ElasticsearchOptions(Section):
+    enabled:bool=False
+    url:str=Field(default='',max_length=2048)
+    auth_type:Literal['api_key','basic']='api_key'
+    username:str=Field(default='',max_length=200)
+    secret:str=Field(default='',max_length=4096)
+    request_body_kib:int=Field(default=0,ge=0,le=16)
+    response_body_kib:int=Field(default=0,ge=0,le=16)
+    retention_days:int=Field(default=30,ge=1,le=365)
+
+    @field_validator('url')
+    @classmethod
+    def endpoint(cls,value):return Basic.url(value)
+
 class SettingsPatch(Section):
     revision:int=Field(ge=0)
     basic:Basic|None=None
     gateway:GatewayOptions|None=None
     security:SecurityOptions|None=None
     logging:LogOptions|None=None
+    vector:VectorOptions|None=None
+    governance:GovernanceOptions|None=None
+    elasticsearch:ElasticsearchOptions|None=None

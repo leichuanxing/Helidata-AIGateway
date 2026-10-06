@@ -6,6 +6,7 @@ from app.core.database import session_factory
 from app.core.exceptions import APIError
 from app.models.user import User
 from app.services.model_catalog import candidates
+from app.services.vector_service import pin
 from app.services.route_jobs import lease,embedding_value
 from app.gateway.context import GatewayContext
 from app.gateway.request_id import generate
@@ -13,16 +14,17 @@ from app.gateway import protocol_adapter,upstream,provider_health,call_log
 from app.providers.operations import compatible
 
 
-async def embedding(actor_id,model,text,client_ip,request_id=None):
+async def embedding(actor_id,model,text,client_ip,request_id=None,system=False):
     ctx=GatewayContext(request_id or generate(),'embeddings',model,{'model':model,'input':text,'encoding_format':'float'},client_ip=client_ip)
-    ctx.stages=['admin_route_preview'];ctx.deferred['smart_routing']='preview_embedding'
+    ctx.stages=['system_vector_service' if system else 'admin_route_preview'];ctx.deferred['smart_routing']='not_applicable' if system else 'preview_embedding'
     outcome,code='failure',None
     try:
         async with session_factory() as db:
-            ctx.user=await db.get(User,actor_id)
-            if not ctx.user or ctx.user.deleted_at or ctx.user.status!='enabled' or ctx.user.role not in ('admin','super_admin') or ctx.user.must_change_password:
+            ctx.user=await db.get(User,actor_id) if actor_id is not None else None
+            if not system and (not ctx.user or ctx.user.deleted_at or ctx.user.status!='enabled' or ctx.user.role not in ('admin','super_admin') or ctx.user.must_change_password):
                 raise APIError(403,'ROUTE_PREVIEW_FORBIDDEN','管理员权限已失效')
             pairs=[(m,p) for m,p in await candidates(db,model) if compatible('embeddings',p)]
+            pairs=pin(pairs,model)
         if not pairs:raise APIError(503,'ROUTE_EMBEDDING_UNAVAILABLE','Embedding模型无可用账号')
         ctx.mapping,ctx.provider=pairs[0];protocol_adapter.bind(ctx)
         ctx.attempts.append({'provider_id':ctx.provider.id,'provider_name':ctx.provider.name,'logical_model':model,
@@ -31,8 +33,9 @@ async def embedding(actor_id,model,text,client_ip,request_id=None):
         async with asyncio.timeout(120):
             async with lease(ctx):
                 async with session_factory() as db:
-                    actor=await db.get(User,actor_id);fresh=await candidates(db,model)
-                    if not actor or actor.deleted_at or actor.status!='enabled' or actor.role not in ('admin','super_admin') or actor.must_change_password:
+                    actor=await db.get(User,actor_id) if actor_id is not None else None
+                    fresh=pin(await candidates(db,model),model)
+                    if not system and (not actor or actor.deleted_at or actor.status!='enabled' or actor.role not in ('admin','super_admin') or actor.must_change_password):
                         raise APIError(403,'ROUTE_PREVIEW_FORBIDDEN','管理员权限已失效')
                     if not any(m.id==ctx.mapping.id and p.config_version==ctx.provider.config_version for m,p in fresh):
                         raise APIError(409,'ROUTE_PROVIDER_CHANGED','Embedding账号配置已变化，请重试')

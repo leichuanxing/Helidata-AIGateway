@@ -75,6 +75,9 @@ async def sync_mappings(db,row,submitted):
     rows=(await db.scalars(select(ProviderModelMapping).where(ProviderModelMapping.provider_id==row.id,
         ProviderModelMapping.deleted_at.is_(None)).with_for_update())).all()
     previous={m.logical_model:m for m in rows};wanted={m.logical_model:m for m in submitted}
+    from app.services.provider_rules import protect_vector_mapping
+    for name,item in wanted.items():
+        if name in previous:protect_vector_mapping(row,previous[name],item)
     await protect_removed(db,row,set(previous)-set(wanted))
     for name,mapping in previous.items():
         if name not in wanted:mapping.deleted_at=now();mapping.status='disabled'
@@ -188,6 +191,9 @@ async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depend
     for m in body.model_mappings if body.model_mappings is not None else (await db.scalars(select(ProviderModelMapping).where(ProviderModelMapping.provider_id==row.id,ProviderModelMapping.deleted_at.is_(None)))).all():category_mapping(probe,m)
     checked_values=checked.model_dump(exclude={'api_key','model_mappings'})
     connection_changed=any(getattr(row,f)!=checked_values[f] for f in ('provider_type','protocol','base_url','protocol_config','proxy','account_type','protocol_type')) or body.api_key is not None or body.clear_api_key
+    from app.services.operations_settings import vector
+    if vector['provider_id']==row.id and any(getattr(row,f)!=checked_values[f] for f in ('provider_type','protocol','base_url','protocol_config')):
+        raise APIError(409,'PROVIDER_IN_USE','共享向量服务正在使用此账号；请先替换向量服务账号，再修改服务端点或协议')
     for field,value in checked_values.items(): setattr(row,field,value)
     if body.api_key is not None: row.api_key_encrypted=encrypt_secret(body.api_key.get_secret_value())
     elif body.clear_api_key: row.api_key_encrypted=None

@@ -36,7 +36,8 @@ async def ranked(ctx,db,filter_capacity=True):
         counts=await provider_concurrency.loads(providers)
         pending=getattr(getattr(ctx,'admission',None),'pending',None)
         if pending in counts:counts[pending]=max(0,counts[pending]-1)
-        pairs.sort(key=lambda pair:(0 if pair[1].id==pending else 1,0 if str(pair[1].id)==sticky else 1,pair[1].priority,
+        from app.providers.configuration import NATIVE,select_protocol
+        pairs.sort(key=lambda pair:(0 if select_protocol(pair[1],ctx.operation)==NATIVE.get(ctx.operation) else 1,0 if pair[1].id==pending else 1,0 if str(pair[1].id)==sticky else 1,pair[1].priority,
             counts[pair[1].id]/pair[1].max_concurrency,counts[pair[1].id],pair[1].failure_count,pair[1].id))
         result.extend((mapping,provider) for mapping,provider in pairs if not filter_capacity or counts[provider.id]<provider.max_concurrency)
     return result,incompatible

@@ -9,14 +9,14 @@ const rows=ref<any[]>([]),words=ref<any[]>([]),samples=ref<any[]>([]),groups=ref
 const page=ref(1),total=ref(0),requestId=ref(''),status=ref(''),days=ref(7),range=ref<[Date,Date]|null>(null)
 const labels:Record<string,string>={text:'普通文本',wildcard:'通配符',regex:'正则',low:'低',medium:'中',high:'高',critical:'严重',enabled:'启用',disabled:'禁用',pending:'待向量化',processing:'处理中',ready:'就绪',failed:'失败',audit:'Audit · 记录并继续',block:'Block · 拒绝请求',word:'敏感词',sample:'语义样本'}
 const blank=()=>({pattern:'',kind:'text',risk:'medium',status:'enabled',text:'',name:'',action:'audit',word_ids:[] as number[],sample_ids:[] as number[],group_ids:[] as number[],models:[] as string[],threshold:.85})
-const form=reactive(blank())
+const form=reactive(blank()),remoteVectors=ref(false)
 let generation=0
 async function load(){const mine=++generation;loading.value=true;error.value='';try{
  const params:any={page:page.value}
  if(view.value==='logs'){params.request_id=requestId.value||undefined;params.action=status.value||undefined;const end=range.value?.[1]||new Date(),start=range.value?.[0]||new Date(end.getTime()-days.value*86400000);params.start=start.toISOString();params.end=end.toISOString()}
  if(view.value==='samples')params.status=status.value||undefined
  const d=(await api.get('/admin/compliance/'+view.value,{params})).data.data
- if(mine!==generation)return;rows.value=d.items;total.value=d.total||d.items.length
+ if(mine!==generation)return;if(view.value==='samples')remoteVectors.value=String(d.model_version||'').startsWith('upstream:');rows.value=d.items;total.value=d.total||d.items.length
  if(view.value==='policies'){
  const [w,g,m]=await Promise.all([api.get('/admin/compliance/words'),api.get('/admin/user-group-options'),api.get('/admin/logical-models')]);if(mine!==generation)return
  words.value=w.data.data.items;groups.value=g.data.data.items||g.data.data;models.value=m.data.data.data||m.data.data
@@ -24,14 +24,14 @@ async function load(){const mine=++generation;loading.value=true;error.value='';
  }
  }catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}}
 function open(row?:any){editing.value=row?.id||null;Object.assign(form,blank(),row||{});if(view.value==='policies'&&!row)form.status='disabled';dialog.value=true}
-async function save(){saving.value=true;try{let body:any
+async function save(){saving.value=true;try{if(view.value==='samples'&&remoteVectors.value)await ElMessageBox.confirm('保存并构建审核样本向量会调用共享向量服务，可能产生用量和费用。','构建审核向量',{confirmButtonText:'保存并构建',cancelButtonText:'取消'});let body:any
  if(view.value==='words')body={pattern:form.pattern,kind:form.kind,risk:form.risk,status:form.status}
- else if(view.value==='samples')body={text:form.text,risk:form.risk}
+ else if(view.value==='samples')body={text:form.text,risk:form.risk,build_vector:remoteVectors.value}
  else body={name:form.name,action:form.action,status:form.status,word_ids:form.word_ids,sample_ids:form.sample_ids,group_ids:form.group_ids,models:form.models,threshold:form.threshold}
  await api[editing.value?'put':'post']('/admin/compliance/'+view.value+(editing.value?'/'+editing.value:''),body);ElMessage.success('已保存');dialog.value=false;await load()
- }catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+ }catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}finally{saving.value=false}}
 async function remove(row:any){try{await ElMessageBox.confirm('删除此资源？已被策略引用的词或样本须先移除引用。历史审核日志保留。','删除资源',{type:'warning'});await api.delete('/admin/compliance/'+view.value+'/'+row.id);ElMessage.success('已删除');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}}
-async function retry(row:any){try{await api.post('/admin/compliance/samples/'+row.id+'/vectorize');ElMessage.success('已重新排队');await load()}catch(e){ElMessage.error(message(e))}}
+async function retry(row:any){try{await ElMessageBox.confirm('重新构建审核向量；使用上游向量服务时可能产生用量和费用。','重建向量',{confirmButtonText:'构建',cancelButtonText:'取消'});await api.post('/admin/compliance/samples/'+row.id+'/vectorize',{consent:true});ElMessage.success('已重新排队');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}}
 function logRisk(row:any){const risks=(row.matches||[]).flatMap((m:any)=>(m.evidence||[]).map((e:any)=>e.risk));return ['critical','high','medium','low'].find(r=>risks.includes(r))||''}
 function names(ids:number[],source:any[]){return ids.map(i=>source.find(x=>x.id===i)?.name||source.find(x=>x.id===i)?.pattern||'样本 #'+i).join('、')||'—'}
 watch(()=>route.fullPath,()=>{page.value=1;status.value='';requestId.value=String(route.query.request_id||'');load()},{immediate:true})

@@ -19,8 +19,10 @@ def select_protocol(provider,operation=None):
     if preferred in config:return preferred
     # Previously configured accounts used the completions prefix for these operations.
     if operation in ('embeddings','images','rerank') and 'openai-completions' in config:return 'openai-completions'
-    if operation=='chat' and 'anthropic-messages' in config:return 'anthropic-messages'
-    if operation=='messages' and 'openai-completions' in config:return 'openai-completions'
+    from app.core.config import get_settings
+    if get_settings().gateway.protocol_conversion:
+        if operation=='chat' and 'anthropic-messages' in config:return 'anthropic-messages'
+        if operation=='messages' and 'openai-completions' in config:return 'openai-completions'
     if operation not in (None,'models','preflight'):return None
     primary='anthropic-messages' if provider.protocol=='anthropic' else 'ollama' if provider.protocol=='ollama' else 'openai-completions'
     if provider.protocol=='openai' and primary not in config and 'openai-responses' in config:return 'openai-responses'

@@ -12,7 +12,7 @@ from app.core.exceptions import APIError
 from app.models.compliance import AuditWord,AuditSample,CompliancePolicy,ComplianceLog,AuditVector
 from app.models.user import UserGroup,LogicalModel
 from app.services.compliance_sources import validate_pattern
-from app.services.local_embedding import VERSION
+from app.services.vector_service import version
 from app.services.sessions import audit
 router=APIRouter(prefix='/api/admin/compliance',tags=['内容合规'])
 class Input(BaseModel):model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
@@ -26,6 +26,7 @@ class WordInput(Input):
 class SampleInput(Input):
  text:str=Field(min_length=1,max_length=2000)
  risk:Literal['low','medium','high']='medium'
+ build_vector:bool=False
 class PolicyInput(Input):
  name:str=Field(min_length=1,max_length=80)
  action:Literal['audit','block']='audit'
@@ -81,18 +82,22 @@ async def samples(actor=Depends(administrator),db=Depends(get_session),page:int=
  q=select(AuditSample)
  if status:q=q.where(AuditSample.vector_status==status)
  total=await db.scalar(select(func.count()).select_from(q.subquery()))
- return {'data':{'items':[public(r) for r in (await db.scalars(q.order_by(AuditSample.id.desc()).offset((page-1)*20).limit(20))).all()],'total':total,'model_version':VERSION}}
+ return {'data':{'items':[public(r) for r in (await db.scalars(q.order_by(AuditSample.id.desc()).offset((page-1)*20).limit(20))).all()],'total':total,'model_version':version()}}
 @router.post('/samples')
 async def add_sample(body:SampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
- await lock(db);await limit(db,AuditSample,500);r=AuditSample(**body.model_dump(),text_hash=hashlib.sha256(body.text.encode()).hexdigest());db.add(r);return await finish(db,r,actor,request,'create_audit_sample')
+ await lock(db);await limit(db,AuditSample,500);r=AuditSample(**body.model_dump(exclude={'build_vector'}),text_hash=hashlib.sha256(body.text.encode()).hexdigest())
+ if version().startswith('upstream:') and not body.build_vector:r.vector_status='failed';r.vector_error='VECTOR_BUILD_CONFIRMATION_REQUIRED'
+ db.add(r);return await finish(db,r,actor,request,'create_audit_sample')
 @router.put('/samples/{ident}')
 async def edit_sample(ident:int,body:SampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
  await lock(db);r=await db.scalar(select(AuditSample).where(AuditSample.id==ident).with_for_update())
  if not r:raise APIError(404,'COMPLIANCE_NOT_FOUND','审核样本不存在')
  r.text=body.text;r.risk=body.risk;r.text_hash=hashlib.sha256(body.text.encode()).hexdigest();r.revision+=1;r.vector_status='pending';r.vector_error=None;r.job_started_at=None
+ if version().startswith('upstream:') and not body.build_vector:r.vector_status='failed';r.vector_error='VECTOR_BUILD_CONFIRMATION_REQUIRED'
  return await finish(db,r,actor,request,'update_audit_sample')
 @router.post('/samples/{ident}/vectorize')
-async def retry(ident:int,request:Request,actor=Depends(administrator),db=Depends(get_session)):
+async def retry(ident:int,request:Request,body:dict|None=None,actor=Depends(administrator),db=Depends(get_session)):
+ if version().startswith('upstream:') and (not body or body.get('consent') is not True):raise APIError(400,'VECTOR_CONSENT_REQUIRED','构建上游向量可能产生费用，请明确确认')
  await lock(db);r=await db.scalar(select(AuditSample).where(AuditSample.id==ident).with_for_update())
  if not r:raise APIError(404,'COMPLIANCE_NOT_FOUND','审核样本不存在')
  r.revision+=1;r.vector_status='pending';r.vector_error=None;r.job_started_at=None
@@ -109,7 +114,7 @@ async def save_policy(body,request,actor,db,ident=None):
  if body.models and await db.scalar(select(func.count()).select_from(LogicalModel).where(LogicalModel.name.in_(body.models)))!=len(body.models):raise APIError(400,'COMPLIANCE_REFERENCE_INVALID','引用模型不存在')
  if body.status=='enabled':
   if body.sample_ids:
-   ready=await db.scalar(select(func.count()).select_from(AuditSample).join(AuditVector,AuditVector.sample_id==AuditSample.id).where(AuditSample.id.in_(body.sample_ids),AuditSample.vector_status=='ready',AuditVector.sample_revision==AuditSample.revision,AuditVector.model_version==VERSION))
+   ready=await db.scalar(select(func.count()).select_from(AuditSample).join(AuditVector,AuditVector.sample_id==AuditSample.id).where(AuditSample.id.in_(body.sample_ids),AuditSample.vector_status=='ready',AuditVector.sample_revision==AuditSample.revision,AuditVector.model_version==version()))
    if ready!=len(body.sample_ids):raise APIError(409,'COMPLIANCE_SAMPLES_NOT_READY','启用前须等待所有审核样本向量就绪')
   elif not await db.scalar(select(func.count()).select_from(AuditWord).where(AuditWord.id.in_(body.word_ids),AuditWord.status=='enabled')):raise APIError(400,'COMPLIANCE_NO_ENABLED_RULE','策略至少需要一条启用规则')
  for k,v in body.model_dump().items():setattr(r,k,v)

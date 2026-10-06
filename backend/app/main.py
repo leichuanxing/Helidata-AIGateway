@@ -43,6 +43,8 @@ async def lifespan(app):
     from app.services import route_jobs,compliance_jobs,compliance_logs,backups
     from app.services import operations_settings,operations_jobs
     await operations_settings.load()
+    from app.services import external_logs
+    external_worker=asyncio.create_task(external_logs.loop())
     operations_worker=asyncio.create_task(operations_jobs.loop())
     backup_worker=asyncio.create_task(backups.loop())
     vectorizer=asyncio.create_task(route_jobs.loop())
@@ -51,6 +53,8 @@ async def lifespan(app):
     replay=asyncio.create_task(call_log.replay_loop())
     sampler=asyncio.create_task(dashboard_live.sample_loop())
     yield
+    external_worker.cancel()
+    with suppress(asyncio.CancelledError):await external_worker
     operations_worker.cancel()
     with suppress(asyncio.CancelledError):await operations_worker
     backup_worker.cancel()

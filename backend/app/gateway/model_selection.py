@@ -41,6 +41,9 @@ async def routes(db,ctx):
     result=[];incompatible=False
     for name in names:
         rows=list(await candidates(db,name))
+        if ctx.operation=='embeddings' and getattr(getattr(ctx.request,'state',None),'parent_request_id',None):
+            from app.services.vector_service import pin
+            rows=pin(rows,name)
         if ctx.operation in KINDS:
             incompatible=incompatible or any(not compatible(ctx.operation,provider) for mapping,provider in rows)
             rows=[(mapping,provider) for mapping,provider in rows if compatible(ctx.operation,provider)]

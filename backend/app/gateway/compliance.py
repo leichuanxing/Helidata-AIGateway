@@ -7,7 +7,7 @@ from app.core.database import session_factory
 from app.core.exceptions import APIError
 from app.models.compliance import CompliancePolicy,AuditWord,AuditSample
 from app.services.compliance_sources import word_matches
-from app.services.local_embedding import embed,VERSION
+from app.services.vector_service import embed,version
 from app.services.route_vectors import encode_vector
 from app.services import compliance_logs
 
@@ -45,17 +45,22 @@ async def load(db,ctx):
  ids={i for p in policies for i in p['word_ids']};samples={i for p in policies for i in p['sample_ids']}
  words=[{k:getattr(r,k) for k in ('id','pattern','kind','risk','status')} for r in (await db.scalars(select(AuditWord).where(AuditWord.id.in_(ids)).order_by(AuditWord.id))).all()] if ids else []
  source=[{k:getattr(r,k) for k in ('id','revision','vector_status','risk')} for r in (await db.scalars(select(AuditSample).where(AuditSample.id.in_(samples)).order_by(AuditSample.id))).all()] if samples else []
+ from app.services.operations_settings import governance
+ if governance['semantic_threshold'] is not None:
+  for policy in policies:policy['threshold']=governance['semantic_threshold']
  return policies,words,source
 async def semantic(db,ids,vectors):
  result={}
  for vector in vectors:
   encoded,_=encode_vector(vector)
-  rows=(await db.execute(text("SELECT s.id,s.risk,1-(v.embedding <=> CAST(:v AS vector)) AS similarity FROM review_samples s JOIN review_vectors v ON s.id=v.sample_id WHERE s.id=ANY(CAST(:ids AS bigint[])) AND s.vector_status='ready' AND v.sample_revision=s.revision AND v.model_version=:model AND vector_dims(v.embedding)=384 ORDER BY similarity DESC LIMIT 500"),dict(v=encoded,ids=list(ids),model=VERSION))).mappings()
+  rows=(await db.execute(text("SELECT s.id,s.risk,1-(v.embedding <=> CAST(:v AS vector)) AS similarity FROM review_samples s JOIN review_vectors v ON s.id=v.sample_id WHERE s.id=ANY(CAST(:ids AS bigint[])) AND s.vector_status='ready' AND v.sample_revision=s.revision AND v.model_version=:model AND vector_dims(v.embedding)=:dimensions ORDER BY similarity DESC LIMIT 500"),dict(v=encoded,ids=list(ids),model=version(),dimensions=len(vector)))).mappings()
   for row in rows:
    old=result.get(row['id'])
    if old is None or row['similarity']>old['similarity']:result[row['id']]={'source':'sample','id':row['id'],'risk':row['risk'],'similarity':max(-1,min(1,row['similarity']))}
  return result
 async def check(db,ctx):
+ from app.services.operations_settings import governance
+ if not governance['compliance_enabled']:ctx.deferred['compliance']='disabled';return
  if ctx.operation=='preflight':ctx.deferred['compliance']='preflight_not_checked';return
  if getattr(ctx.request.state,'compliance_checked',False):ctx.deferred['compliance']='parent_checked';return
  started=monotonic();snapshot=await load(db,ctx);policies,words,samples=snapshot
@@ -73,7 +78,7 @@ async def check(db,ctx):
   if semantic_ids:
    if {s['id'] for s in samples if s['vector_status']=='ready'}!=semantic_ids:raise APIError(503,'COMPLIANCE_SAMPLES_NOT_READY','审核样本尚未全部就绪，请联系管理员')
    await db.commit()
-   vectors=await embed(value)
+   vectors=await embed(value,ctx.user.id,ctx.client_ip)
    async with session_factory() as local_db:
     if await load(local_db,ctx)!=snapshot:raise APIError(409,'COMPLIANCE_CHANGED','审核策略或样本已变化，请重试')
     found=await semantic(local_db,semantic_ids,vectors)

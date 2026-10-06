@@ -76,6 +76,12 @@ async def write(ctx,outcome,code=None):
     logger.info('%s',json.dumps(record,ensure_ascii=False),extra={'request_id':ctx.request_id})
     durable=snapshot(ctx,outcome,code)
     with anyio.CancelScope(shield=True):
+        if ctx.key:
+            try:
+                from app.services.external_logs import enqueue
+                async with asyncio.timeout(.5):
+                    await enqueue({**durable,'request_body':getattr(ctx,'request_preview',None),'response_body':getattr(ctx,'response_preview',None)})
+            except Exception:logger.warning('External log enqueue unavailable',extra={'request_id':ctx.request_id})
         try:await persist(durable)
         except Exception:
             try:await asyncio.to_thread(spool,durable)

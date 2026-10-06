@@ -28,7 +28,7 @@ class AuditSample(Base):
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now())
 class AuditVector(Base):
  __tablename__='review_vectors'
- __table_args__=(CheckConstraint('vector_dims(embedding)=384 AND vector_norm(embedding)>0',name='ck_audit_vector_valid'),)
+ __table_args__=(CheckConstraint('vector_dims(embedding) BETWEEN 1 AND 4096 AND vector_norm(embedding)>0',name='ck_audit_vector_valid'),)
  sample_id:Mapped[int]=mapped_column(ForeignKey('review_samples.id',ondelete='CASCADE'),primary_key=True)
  embedding:Mapped[object]=mapped_column(Vector())
  model_version:Mapped[str]=mapped_column(String(100))

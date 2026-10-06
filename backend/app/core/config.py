@@ -44,6 +44,7 @@ class RedisConfig(ConfigSection):
 
 
 class Gateway(ConfigSection):
+    protocol_conversion: bool = True
     max_concurrency: int = Field(default=500, ge=1, le=100000)
     queue_size: int = Field(default=1000, ge=0, le=100000)
     queue_timeout: int = Field(default=30, ge=1, le=3600)
@@ -78,7 +79,7 @@ class Logging(ConfigSection):
     level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = 'INFO'
     save_request_body: bool = False
     save_response_body: bool = False
-    retention_days: int = Field(default=366, ge=366, le=3650)
+    retention_days: int = Field(default=366, ge=1, le=3650)
     redaction_rules: list[str] = Field(default_factory=list,max_length=20)
 
 

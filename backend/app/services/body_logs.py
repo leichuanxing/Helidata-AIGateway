@@ -33,13 +33,17 @@ def redact(value,policy):
 
 def begin(ctx):
     ctx.log_policy=get_settings().logging.model_dump()
+    from app.services.operations_settings import elasticsearch
+    ctx.log_policy['save_request_body'] |= elasticsearch['enabled'] and elasticsearch['request_body_kib']>0
+    ctx.log_policy['save_response_body'] |= elasticsearch['enabled'] and elasticsearch['response_body_kib']>0
     ctx.request_preview=redact(ctx.payload,ctx.log_policy) if ctx.log_policy['save_request_body'] else None
     ctx.response_preview=None;ctx.preview_bytes=0
 
 
 def response(ctx,value,stream=False):
     policy=getattr(ctx,'log_policy',{})
-    if not policy.get('save_response_body') or not get_settings().logging.save_response_body:return
+    from app.services.operations_settings import elasticsearch
+    if not policy.get('save_response_body') or not (get_settings().logging.save_response_body or elasticsearch['enabled'] and elasticsearch['response_body_kib']>0):return
     value=redact(value,policy)
     if not stream:ctx.response_preview=value;return
     if ctx.response_preview is None:ctx.response_preview={'stream':True,'events':[],'truncated':False}

@@ -13,6 +13,7 @@ from app.core.exceptions import APIError
 from app.models.routing import RouteConfig,RouteSample
 from app.models.user import User
 from app.services.model_catalog import candidates
+from app.services.vector_service import pin
 from app.services.route_vectors import encode_vector,store_vector
 from app.gateway.context import GatewayContext
 from app.gateway.request_id import generate
@@ -91,6 +92,7 @@ async def process(job):
             if not ctx.user or ctx.user.deleted_at or ctx.user.status!='enabled' or ctx.user.role not in ('admin','super_admin') or ctx.user.must_change_password:
                 raise APIError(403,'ROUTE_JOB_FORBIDDEN','提交样本的管理员权限已失效')
             pairs=[(m,p) for m,p in await candidates(db,job['model']) if compatible('embeddings',p)]
+            pairs=pin(pairs,job['model'])
         if not pairs:raise APIError(503,code,'Embedding模型无可用账号')
         # Each durable job tries one account; explicit retry rebuilds a new version.
         ctx.mapping,ctx.provider=pairs[0];protocol_adapter.bind(ctx)
@@ -105,7 +107,7 @@ async def process(job):
                         RouteSample.id==job['sample_id'],RouteSample.revision==job['revision'],RouteSample.vector_status=='processing',
                         RouteSample.vector_request_id==job['request_id'],RouteConfig.vector_generation==job['generation'],RouteConfig.embedding_model==job['model']))
                     actor=await db.get(User,job['actor'])
-                    fresh=await candidates(db,job['model'])
+                    fresh=pin(await candidates(db,job['model']),job['model'])
                     if not valid or not actor or actor.deleted_at or actor.status!='enabled' or actor.role not in ('admin','super_admin') or actor.must_change_password:
                         raise APIError(409,'ROUTE_JOB_STALE','样本版本或管理员权限已变化')
                     if not any(m.id==ctx.mapping.id and p.config_version==ctx.provider.config_version for m,p in fresh):

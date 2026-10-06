@@ -51,6 +51,8 @@ def prompt(ctx):
 
 async def route(db,ctx):
     cfg=await db.scalar(select(RouteConfig).where(RouteConfig.virtual_model==ctx.logical_model))
+    from app.services.operations_settings import governance
+    if cfg and not governance['smart_route_enabled']:raise APIError(503,'ROUTE_DISABLED','智能路由总开关未启用')
     if not cfg:
         ctx.deferred['smart_routing']='not_applicable';return ctx.logical_model
     started=monotonic();ctx.original_model=ctx.logical_model;ctx.route_config_id=cfg.id
@@ -77,8 +79,8 @@ async def route(db,ctx):
                     evidence,embedding_id,cfg=await vector_decision(db,ctx,cfg,snapshot,text)
                     choice=classify(evidence,cfg.similarity_threshold,cfg.confidence_gap)
                     classification,similarity,confidence,reason=choice.classification,choice.similarity,choice.confidence,choice.reason
-                    if classification is None:raise APIError(503,reason,'样本匹配的相似度或置信差不足')
-                    status='classified'
+                    if classification is None:classification='simple';status='fallback'
+                    else:status='classified'
             except APIError as error:
                 embedding_id=embedding_id or ctx.deferred.get('_selection_embedding_id')
                 reason=error.detail['code']

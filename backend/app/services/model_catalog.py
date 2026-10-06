@@ -62,8 +62,9 @@ async def catalog(db,user_group_id):
     virtual_rows=(await db.scalars(virtual_query)).all()
     virtual_names={cfg.virtual_model for cfg in virtual_rows}
     from app.api.admin.smart_route import real_members
+    from app.services.operations_settings import governance
     for cfg in virtual_rows:
-        if cfg.status!='enabled':continue
+        if not governance['smart_route_enabled'] or cfg.status!='enabled':continue
         if cfg.embedding_model not in available or not {cfg.simple_model_group,cfg.complex_model_group}.issubset(set(ids)):continue
         try:
             for ident in (cfg.simple_model_group,cfg.complex_model_group):await real_members(db,ident)
