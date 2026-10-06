@@ -1,0 +1,5 @@
+# Build frontend target as helidata-ai-gateway:login-layout-ui.
+# This release overlays verified v0.1.1 imagebe4810faca44 with frontend resources.
+FROM helidata-ai-gateway:login-layout-ui AS ui
+FROM helidata-ai-gateway:v0.1.1
+COPY --from=ui /build/dist /app/frontend
