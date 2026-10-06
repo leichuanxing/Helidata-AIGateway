@@ -20,6 +20,13 @@ PROVIDER_TYPES={
 ADAPTERS={'openai':OpenAIProvider,'anthropic':AnthropicProvider,'ollama':OllamaProvider}
 
 
-def build_adapter(provider,key):
-    adapter=CustomOpenAIProvider if provider.provider_type=='custom_openai' else ADAPTERS[provider.protocol]
-    return adapter(provider.base_url,key,provider.proxy)
+def build_adapter(provider,key,operation=None):
+    from app.providers.configuration import select_protocol,configurations,NAMES
+    from app.providers.base import ProviderFailure
+    name=select_protocol(provider,operation)
+    if name is None:raise ProviderFailure('UNSUPPORTED_OPERATION')
+    protocol=NAMES[name];route=configurations(provider)[name]
+    adapter=CustomOpenAIProvider if provider.provider_type=='custom_openai' and protocol=='openai' else ADAPTERS[protocol]
+    result=adapter(provider.base_url.rstrip('/')+route['path_prefix'],key or '',provider.proxy)
+    result.auth_type=route['auth_type'];result.wire_protocol=protocol;result.protocol_name=name
+    return result

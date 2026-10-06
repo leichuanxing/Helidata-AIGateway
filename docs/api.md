@@ -67,3 +67,5 @@
 错误体含error.code/message/type/request_id，Anthropic路径采用其错误外层结构。401身份、403授权、413体积、422校验、429配额/排队、502上游故障、503依赖/HTTP池容量、504超时。准备队列也可返回429 `PREPARATION_TIMEOUT`或`PREPARATION_QUEUE_FULL`。
 
 调用日志每Request ID一个持久终态；SSE开始后的失败HTTP状态保持200，以终态和错误事件判定。未知usage不估算消费。调用过滤默认7天、区间≤31天、每页≤100；统计查询最长366天。正文、Key、代理密码与原始上游错误不写常规运行日志。受控正文预览是显式开启的独立数据库字段。
+
+账号新增/编辑支持 `protocol_config`：以 `openai-completions`、`openai-responses`、`anthropic-messages`（可同时选择）或独立 `ollama` 为键，值为 `{ "path_prefix": "/v1", "auth_type": "bearer" }`。Anthropic 也允许 `x-api-key`。路径前缀可留空，不允许查询参数、片段或路径穿越。`protocol` 保留为主协议及旧接口兼容字段。`default_test_model` 为本账号已启用映射的逻辑模型名，传 null 清空。连接测试只读取模型列表，可返回 `test_model`、`model_available`，未找到返回 `TEST_MODEL_NOT_FOUND`，不改变账号的正常连接状态。

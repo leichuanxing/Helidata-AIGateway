@@ -111,7 +111,9 @@ class CustomOpenAIProvider(OpenAIProvider):
 
 
 class AnthropicProvider(BaseProvider):
-    def headers(self): return {'x-api-key':self.key,'anthropic-version':'2023-06-01'}
+    def headers(self):
+        auth={'Authorization':'Bearer '+self.key} if getattr(self,'auth_type','x-api-key')=='bearer' else {'x-api-key':self.key}
+        return {**auth,'anthropic-version':'2023-06-01'}
     async def list_models(self):
         start=time.monotonic();path='/models?limit=1000';models=[];cursors=set()
         for _ in range(20):

@@ -142,6 +142,8 @@ class Provider(Base):
     provider_type: Mapped[str] = mapped_column(String(40))
     protocol: Mapped[str] = mapped_column(String(20))
     base_url: Mapped[str] = mapped_column(String(2048))
+    protocol_config: Mapped[dict[str,Any] | None] = mapped_column(JSONB)
+    default_test_model: Mapped[str | None] = mapped_column(String(100))
     api_key_encrypted: Mapped[str | None] = mapped_column(Text)
     proxy: Mapped[str | None] = mapped_column(String(2048))
     priority: Mapped[int] = mapped_column(Integer,default=0,server_default='0')

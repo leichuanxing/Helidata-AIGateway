@@ -81,6 +81,7 @@ async def execute(request,ctx,resources):
                         valid=any(m.id==mapping.id and p.config_version==provider.config_version for _,pairs in fresh for m,p in pairs)
                     if not valid: continue
                     ctx.stages.extend(['provider_concurrency','protocol_adapter']);protocol_adapter.bind(ctx)
+                    entry['protocol']=ctx.adapter.protocol_name
                     prepare(ctx)  # Reject lossy translations before reserving quota or sending upstream.
                     await attempt.enter_async_context(quota.acquire(ctx))
                     ctx.usage_snapshot={}

@@ -13,18 +13,22 @@ def compatible(operation,provider):
     from app.providers.registry import PROVIDER_TYPES
     supported=PROVIDER_TYPES.get(provider.provider_type,{}).get('operations')
     if supported is not None and operation not in supported:return False
-    if operation in ('chat','messages'):return provider.protocol in ('openai','anthropic')
-    if operation in ('responses','embeddings','images'):return provider.protocol=='openai'
-    return operation=='rerank' and provider.protocol=='openai' and provider.provider_type=='custom_openai'
+    from app.providers.configuration import select_protocol,NAMES
+    selected=select_protocol(provider,operation)
+    if not selected:return False
+    protocol=NAMES[selected]
+    if operation in ('chat','messages'):return protocol in ('openai','anthropic')
+    if operation in ('responses','embeddings','images'):return protocol=='openai'
+    return operation=='rerank' and protocol=='openai' and provider.provider_type=='custom_openai'
 
 def prepare(ctx):
     from app.providers.translator import chat_to_messages,messages_to_chat
     ctx.wire_operation=ctx.operation
     payload={**ctx.payload,'model':ctx.mapping.upstream_model}
     try:
-        if ctx.operation=='chat' and ctx.provider.protocol=='anthropic':
+        if ctx.operation=='chat' and ctx.adapter.wire_protocol=='anthropic':
             ctx.wire_operation='messages';payload=chat_to_messages(payload)
-        elif ctx.operation=='messages' and ctx.provider.protocol=='openai':
+        elif ctx.operation=='messages' and ctx.adapter.wire_protocol=='openai':
             ctx.wire_operation='chat';payload=messages_to_chat(payload)
     except (KeyError,TypeError,ValueError):
         raise APIError(400,'PROTOCOL_ERROR','请求无法转换协议') from None

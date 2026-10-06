@@ -99,6 +99,9 @@ async def mapping(db,provider_id,mapping_id):
 @router.put('/providers/{provider_id}/model-mappings/{mapping_id}')
 async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     row=await mapping(db,provider_id,mapping_id);await canonical(db,body.logical_model,body.model_type)
+    account=await provider(db,provider_id)
+    if account.default_test_model==row.logical_model:
+        account.default_test_model=body.logical_model if body.status=='enabled' else None
     for f,v in body.model_dump().items(): setattr(row,f,v)
     try:
         await db.flush();await db.refresh(row)
@@ -111,5 +114,7 @@ async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Requ
 @router.delete('/providers/{provider_id}/model-mappings/{mapping_id}')
 async def remove(provider_id: int,mapping_id: int,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     row=await mapping(db,provider_id,mapping_id);row.deleted_at=now();row.status='disabled'
+    account=await provider(db,provider_id)
+    if account.default_test_model==row.logical_model:account.default_test_model=None
     audit(db,actor.id,'delete_model_mapping',row.id,request.client.host,resource_type='model_mapping');await db.commit()
     return {'data':{'message':'映射已删除，历史记录保留'}}

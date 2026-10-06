@@ -379,6 +379,8 @@ CREATE TABLE public.providers (
     name character varying(80) NOT NULL,
     provider_type character varying(40) NOT NULL,
     protocol character varying(20) NOT NULL,
+    protocol_config jsonb,
+    default_test_model character varying(100),
     base_url character varying(2048) NOT NULL,
     api_key_encrypted text,
     proxy character varying(2048),

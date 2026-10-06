@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,Query,Request
 from pydantic import ValidationError
-from sqlalchemy import select,func,update
+from sqlalchemy import select,func,update,or_,and_
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_session
 from app.core.dependencies import administrator
@@ -14,7 +14,7 @@ from app.services.provider_crypto import encrypt_secret,decrypt_secret
 from app.services.sessions import audit
 from app.gateway.provider_concurrency import loads
 router=APIRouter(prefix='/api/admin/providers',tags=['账号池'])
-FIELDS=('name','provider_type','protocol','base_url','proxy','priority','max_concurrency','status','remark')
+FIELDS=('name','provider_type','protocol','base_url','protocol_config','default_test_model','proxy','priority','max_concurrency','status','remark')
 ERROR_MESSAGES={
     'UPSTREAM_AUTH_FAILED':'上游拒绝鉴权，请检查Key和权限',
     'UPSTREAM_HTTP_ERROR':'上游返回非成功HTTP状态',
@@ -40,10 +40,20 @@ async def target(db,provider_id,lock=False):
 
 
 def validate_input(body,has_key):
-    if body.protocol not in PROVIDER_TYPES[body.provider_type]['protocols']:
+    if body.protocol_config is None and body.protocol not in PROVIDER_TYPES[body.provider_type]['protocols']:
         raise APIError(422,'PROVIDER_PROTOCOL_MISMATCH','供应商与协议不匹配')
     if PROVIDER_TYPES[body.provider_type]['key_required'] and not has_key:
         raise APIError(422,'PROVIDER_KEY_REQUIRED','该供应商需要API Key')
+
+
+async def validate_test_model(db,row,submitted=None):
+    if not row.default_test_model:return
+    if submitted is not None:
+        valid=any(m.logical_model==row.default_test_model and m.status=='enabled' for m in submitted)
+    else:
+        valid=await db.scalar(select(ProviderModelMapping.id).where(ProviderModelMapping.provider_id==row.id,
+            ProviderModelMapping.logical_model==row.default_test_model,ProviderModelMapping.status=='enabled',ProviderModelMapping.deleted_at.is_(None)))
+    if not valid:raise APIError(422,'INVALID_TEST_MODEL','默认测试模型必须是本账号已启用的模型映射')
 
 
 async def sync_mappings(db,row,submitted):
@@ -96,7 +106,10 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),page: int
     if q: query=query.where(Provider.name.icontains(q,autoescape=True))
     if status: query=query.where(Provider.status==status)
     if provider_type: query=query.where(Provider.provider_type==provider_type)
-    if protocol: query=query.where(Provider.protocol==protocol)
+    if protocol:
+        names={'openai':['openai-completions','openai-responses'],'anthropic':['anthropic-messages'],'ollama':['ollama']}.get(protocol,[])
+        query=query.where(or_(and_(or_(Provider.protocol_config.is_(None),func.jsonb_typeof(Provider.protocol_config)=='null'),Provider.protocol==protocol),
+            *[Provider.protocol_config.has_key(n) for n in names]))
     if health_status: query=query.where(Provider.health_status==health_status)
     total=await db.scalar(select(func.count()).select_from(query.subquery()))
     rows=(await db.scalars(query.order_by(Provider.priority.asc(),Provider.id).offset((page-1)*page_size).limit(page_size))).all()
@@ -118,6 +131,7 @@ async def create(body: ProviderCreate,request: Request,actor=Depends(administrat
     db.add(row)
     try:
         await db.flush()
+        await validate_test_model(db,row,body.model_mappings)
         if body.model_mappings is not None:await sync_mappings(db,row,body.model_mappings)
         await db.refresh(row)
         audit(db,actor.id,'create_provider',row.id,request.client.host,resource_type='provider')
@@ -146,6 +160,8 @@ async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depend
         raise APIError(422,'VALIDATION_ERROR','请检查字段：'+fields) from None
     has_key=bool(body.api_key) or (bool(row.api_key_encrypted) and not body.clear_api_key)
     validate_input(checked,has_key)
+    probe=Provider(id=row.id,**checked.model_dump(exclude={'api_key','model_mappings'}))
+    await validate_test_model(db,probe,body.model_mappings)
     for field,value in checked.model_dump(exclude={'api_key','model_mappings'}).items(): setattr(row,field,value)
     if body.api_key is not None: row.api_key_encrypted=encrypt_secret(body.api_key.get_secret_value())
     elif body.clear_api_key: row.api_key_encrypted=None
@@ -178,19 +194,27 @@ async def test(provider_id: int,request: Request,actor=Depends(administrator),db
     row=await target(db,provider_id)
     if row.status!='enabled': raise APIError(409,'PROVIDER_DISABLED','请先启用账号，再测试连接')
     version=row.config_version
+    await validate_test_model(db,row)
+    test_model=row.default_test_model
+    mapping=await db.scalar(select(ProviderModelMapping).where(ProviderModelMapping.provider_id==row.id,
+        ProviderModelMapping.logical_model==test_model,ProviderModelMapping.deleted_at.is_(None))) if test_model else None
     adapter=build_adapter(row,decrypt_secret(row.api_key_encrypted))
     await db.commit()  # Release DB transaction before external network I/O.
     try:
         models=await adapter.list_models()
-        result={'success':True,'network_connected':True,'authentication':'accepted' if row.api_key_encrypted else 'not_configured',
+        available=mapping is None or mapping.upstream_model in {m['id'] for m in models}
+        result={'success':available,'network_connected':True,'authentication':'accepted' if row.api_key_encrypted else 'not_configured',
                 'http_status':adapter.http_status,'latency_ms':adapter.latency_ms,'model_count':len(models),'error_code':None,
-                'message':'模型列表请求成功；生成能力仍需对应模型调用验证'}
+                'message':('默认测试模型已在上游模型列表中确认；生成能力仍需实际调用验证' if test_model else '模型列表请求成功；生成能力仍需对应模型调用验证') if available else '上游模型列表中未找到默认测试模型',
+                'test_model':test_model,'model_available':available if test_model else None}
+        if not available:result['error_code']='TEST_MODEL_NOT_FOUND'
     except ProviderFailure as error:
         result={'success':False,'network_connected':error.network,'authentication':error.auth,
                 'http_status':error.status,'latency_ms':error.latency_ms,'model_count':None,'error_code':error.code,
                 'message':ERROR_MESSAGES.get(error.code,'所选协议暂不支持此操作')}
+    connected=result['success'] or result['error_code']=='TEST_MODEL_NOT_FOUND'
     updated=await db.execute(update(Provider).where(Provider.id==provider_id,Provider.config_version==version,Provider.status=='enabled',Provider.deleted_at.is_(None))
-        .values(health_status='healthy' if result['success'] else 'unhealthy',failure_count=0 if result['success'] else Provider.failure_count+1,cooldown_until=None,
+        .values(health_status='healthy' if connected else 'unhealthy',failure_count=0 if connected else Provider.failure_count+1,cooldown_until=None,
                 last_test_at=now(),last_http_status=result['http_status'],last_latency_ms=result['latency_ms'],last_error_code=result['error_code'],updated_at=now()))
     if not updated.rowcount:
         await db.rollback()
