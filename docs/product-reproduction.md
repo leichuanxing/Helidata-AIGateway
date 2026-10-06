@@ -21,7 +21,7 @@
 | M-01 | [模型组](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/model_group/) | 类型选择与筛选、自定义模型名、模型排序、引用删除保护、抽屉与列表布局 | 部分对齐 |
 | U-01 | [用户](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/user/) | 确认密码、备注、锁定解锁、唯一管理员保护、用量重置保留历史 | 开发中 |
 | D-01 | [概览](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/overview/) | 指标、峰值/平均并发历史、实时账号/用户组负载、排行和周期切换 | 待补齐 |
-| R-01 | [智能模型选择](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/smart_route/) | 默认样本页、单样本阈值/备注、批量录入、保存构建、选中/全部构建 | 开发中 |
+| R-01 | [智能路由](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/smart_route/) | 默认样本页、单样本阈值/备注、批量录入、保存构建、选中/全部构建 | 开发中 |
 | R-02 | 同上 | 决策预览、筛选/详情、六项统计指标与分布 | 开发中 |
 | C-01 | [内容合规](https://docs.fit2cloud.com/ai-gateway/admin-user-manual/content_compliance/) | 四标签、词/样本归属策略、批量词库、样本备注与向量构建 | 待补齐 |
 | C-02 | 同上 | 动作/风险、策略引用保护、审核详情、共享向量服务 | 待补齐 |

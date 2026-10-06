@@ -18,7 +18,7 @@ from app.services.model_catalog import candidates
 from app.services.sessions import audit
 from app.providers.operations import compatible
 
-router=APIRouter(prefix='/api/admin/smart-route',tags=['智能模型选择'])
+router=APIRouter(prefix='/api/admin/smart-route',tags=['智能路由'])
 
 
 def public(row):

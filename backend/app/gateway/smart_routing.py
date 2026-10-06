@@ -29,7 +29,7 @@ def prompt(ctx):
     else:
         texts=[]
         for item in items or []:
-            if not isinstance(item,dict):raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能模型选择需要文本用户输入')
+            if not isinstance(item,dict):raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能路由需要文本用户输入')
             if item.get('role') not in ('user',None):continue
             content=item.get('content')
             if isinstance(content,str):texts.append(content)
@@ -39,11 +39,11 @@ def prompt(ctx):
                         raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','图像或非文本输入请使用明确的逻辑模型')
                     texts.append(block.get('text',''))
             elif item.get('type') in ('text','input_text'):texts.append(item.get('text',''))
-            else:raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能模型选择需要文本用户输入')
+            else:raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能路由需要文本用户输入')
         if any(not isinstance(t,str) for t in texts):raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','模型选择需要有效文本输入')
         result='\n'.join(texts)
     if not result.strip() or len(result)>16000 or len(result.encode())>64000:
-        raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能模型选择文本输入须为1至16000字符且不超过64KB')
+        raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能路由文本输入须为1至16000字符且不超过64KB')
     if any(ord(c)<32 and c not in '\n\r\t' or ord(c)==127 for c in result):
         raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','模型选择文本包含不支持的控制字符')
     return normalize_prompt(result)

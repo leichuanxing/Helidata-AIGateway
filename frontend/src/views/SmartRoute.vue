@@ -10,7 +10,7 @@ const configs=ref<any[]>([]),rows=ref<any[]>([]),models=ref<any[]>([]),groups=re
 const configId=ref<number|null>(null),page=ref(1),total=ref(0),status=ref(''),requestId=ref(''),virtual=ref(''),days=ref(7)
 const sampleClass=ref(''),sampleQuery=ref(''),logQuery=ref(''),logSource=ref(''),logKind=ref(''),detailLoading=ref(false),bulkMode=ref('text'),bulkLabel=ref('simple'),bulkText=ref(''),bulkThreshold=ref<number|null>(null),bulkRemark=ref('')
 const sources:Record<string,string>={local_rule:'本地规则（样本精确匹配）',vector:'向量相似度',fallback:'失败策略',error:'校验拒绝',legacy:'历史未记录'}
-const reasons:Record<string,string>={ROUTE_NO_SAMPLES:'没有可用的已构建样本',ROUTE_LOW_SIMILARITY:'未达到生效阈值',ROUTE_AMBIGUOUS:'分类置信差不足',ROUTE_CHANGED:'配置在决策期间发生变化',ROUTE_DISABLED:'模型选择规则未启用',ROUTE_GROUP_EMPTY:'目标模型组无可用映射'}
+const reasons:Record<string,string>={ROUTE_NO_SAMPLES:'没有可用的已构建样本',ROUTE_LOW_SIMILARITY:'未达到生效阈值',ROUTE_AMBIGUOUS:'分类置信差不足',ROUTE_CHANGED:'配置在决策期间发生变化',ROUTE_DISABLED:'路由规则未启用',ROUTE_GROUP_EMPTY:'目标模型组无可用映射'}
 function reasonText(code:string|null){return code?reasons[code]||code:'达到分类阈值'}
 function score(value:number|null|undefined){return value==null?'未记录':(value*100).toFixed(1)+'%'}
 async function showDetail(row:any){detailLoading.value=true;try{detail.value=(await api.get('/admin/smart-route/logs/'+row.id)).data.data}catch(e){ElMessage.error(message(e))}finally{detailLoading.value=false}}
@@ -50,7 +50,7 @@ async function load(){const mine=++generation;loading.value=true;error.value='';
   }
 }catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}}
 function open(row?:any){editing.value=row?.id??null;Object.assign(form,blank());if(row)for(const key of Object.keys(blank()))(form as any)[key]=row[key];dialog.value=true}
-async function save(){saving.value=true;try{await api[editing.value?'put':'post']('/admin/smart-route/configs'+(editing.value?'/'+editing.value:''),form);dialog.value=false;await load();ElMessage.success('模型选择规则已保存')}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
+async function save(){saving.value=true;try{await api[editing.value?'put':'post']('/admin/smart-route/configs'+(editing.value?'/'+editing.value:''),form);dialog.value=false;await load();ElMessage.success('路由规则已保存')}catch(e){ElMessage.error(message(e))}finally{saving.value=false}}
 async function remove(row:any){try{await ElMessageBox.confirm('删除规则及其所有样本，历史决策保留。已加入模型组的虚拟模型需先移除关联。','删除 '+row.virtual_model,{type:'warning'});await api.delete('/admin/smart-route/configs/'+row.id);await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(message(e))}}
 function sampleOpen(row?:any){sampleEditing.value=row?.id??null;Object.assign(sample,{prompt:row?.prompt||'',classification:row?.classification||'simple',similarity_threshold:row?.similarity_threshold??null,remark:row?.remark||'',build_vector:false});sampleDialog.value=true}
 async function sampleSave(){if(!configId.value)return;saving.value=true;try{
@@ -72,15 +72,15 @@ const timer=setInterval(()=>{if(view.value==='samples'&&!saving.value&&!loading.
 onUnmounted(()=>{clearInterval(timer);generation++})
 </script>
 <template><div>
-<PageHeader title="智能模型选择" description="根据请求内容选择模型，管理分类样本、查看决策依据与用量分布。"/>
-<nav class="route-nav" aria-label="智能模型选择模块"><router-link to="/admin/smart-route/samples">样本管理</router-link><router-link to="/admin/smart-route/logs">决策日志</router-link><router-link to="/admin/smart-route/statistics">统计</router-link><router-link to="/admin/smart-route/configs">模型选择规则</router-link></nav>
-<el-alert v-if="!loading&&!configs.length" title="请先配置模型选择规则：选择向量模型及简单、复杂任务模型组，再添加并构建样本。" type="info" :closable="false" style="margin-bottom:16px"><el-button type="primary" link @click="router.push('/admin/smart-route/configs')">配置模型选择规则</el-button></el-alert>
+<PageHeader title="智能路由" description="根据请求内容选择模型，管理分类样本、查看决策依据与用量分布。"/>
+<nav class="route-nav" aria-label="智能路由模块"><router-link to="/admin/smart-route/samples">样本管理</router-link><router-link to="/admin/smart-route/logs">决策日志</router-link><router-link to="/admin/smart-route/statistics">统计</router-link><router-link to="/admin/smart-route/configs">路由规则</router-link></nav>
+<el-alert v-if="!loading&&!configs.length" title="请先配置路由规则：选择向量模型及简单、复杂任务模型组，再添加并构建样本。" type="info" :closable="false" style="margin-bottom:16px"><el-button type="primary" link @click="router.push('/admin/smart-route/configs')">配置路由规则</el-button></el-alert>
 <el-alert v-if="error" :title="error" type="error" :closable="false"/>
 <div class="panel">
 <div class="toolbar">
-<template v-if="view==='configs'"><el-button type="primary" @click="open()">新增模型选择规则</el-button></template>
+<template v-if="view==='configs'"><el-button type="primary" @click="open()">新增路由规则</el-button></template>
 <template v-else-if="view==='samples'">
-<el-select v-model="configId" placeholder="选择模型选择规则" style="width:220px" @change="page=1;load()"><el-option v-for="c in configs" :key="c.id" :label="c.virtual_model" :value="c.id"/></el-select>
+<el-select v-model="configId" placeholder="选择路由规则" style="width:220px" @change="page=1;load()"><el-option v-for="c in configs" :key="c.id" :label="c.virtual_model" :value="c.id"/></el-select>
 <el-select v-model="status" placeholder="全部向量状态" clearable style="width:160px" @change="page=1;load()"><el-option v-for="s in ['not_built','pending','processing','ready','failed','stale']" :key="s" :label="labels[s]" :value="s"/></el-select>
 <el-select v-model="sampleClass" clearable placeholder="全部标签" style="width:140px" @change="page=1;load()"><el-option label="简单任务" value="simple"/><el-option label="复杂任务" value="complex"/></el-select><el-input v-model="sampleQuery" clearable placeholder="搜索样本文本 / 备注" style="width:210px" @keyup.enter="page=1;load()"/><el-button type="primary" :disabled="!configId" @click="sampleOpen()">新增样本</el-button><el-button :disabled="!configId" @click="bulkText='';bulkMode='text';buildCSV=false;importDialog=true">批量添加</el-button><el-button :disabled="!selected.length||building" :loading="building" @click="buildSelected(false)">构建选中向量</el-button><el-button :disabled="!configId||!total||building" :loading="building" @click="buildSelected(true)">构建全部向量</el-button>
 <el-button :disabled="!configId" @click="previewOpen">决策预览</el-button>
@@ -134,7 +134,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
 <el-pagination v-if="view==='samples'||view==='logs'" v-model:current-page="page" :total="total" :page-size="20" layout="total,prev,pager,next" style="margin-top:24px" @current-change="load"/>
 </div>
 <el-dialog v-model="previewDialog" title="决策预览" width="720px" :close-on-click-modal="!previewLoading"><el-input v-model="previewText" type="textarea" :rows="6" maxlength="16000" show-word-limit placeholder="输入需要分类的请求文本" :disabled="previewLoading"/><p class="muted">预览与真实请求使用相同规则和已就绪样本，记录预览决策；不执行文本生成、不自动保存样本。向量请求的用量记录在调用日志。</p><el-checkbox v-model="previewConsent" :disabled="previewLoading">允许必要的向量请求，可能产生用量（本地精确匹配无需调用）</el-checkbox><template v-if="previewResult"><p>{{labels[previewResult.status]}} · {{labels[previewResult.classification]||'未分类'}} · {{previewResult.selected_group_name||'未选择目标组'}}</p><p>最高相似度 {{score(previewResult.similarity)}} · 分类置信差 {{score(previewResult.confidence)}} · {{previewResult.elapsed_ms}} ms</p><p class="muted">{{sources[previewResult.source]}} · {{reasonText(previewResult.reason)}} · 候选模型 {{previewResult.candidate_models.join(' / ')||'—'}}</p><p><router-link class="route-link" :to="{path:'/admin/smart-route/logs',query:{request_id:previewResult.request_id}}">查看本次预览决策详情 →</router-link></p><el-table :data="previewResult.evidence" empty-text="无有效命中样本"><el-table-column prop="sample_id" label="样本ID"/><el-table-column label="标签"><template #default="s">{{labels[s.row.classification]}}</template></el-table-column><el-table-column label="相似度"><template #default="s">{{s.row.similarity.toFixed(6)}}</template></el-table-column></el-table><router-link v-if="previewResult.embedding_request_id" :to="'/admin/call-logs/'+previewResult.embedding_request_id" class="route-link">查看向量请求用量</router-link></template><template #footer><el-button v-if="previewResult?.classification" type="success" :disabled="previewResult.source==='local_rule'" @click="previewAdd">{{previewResult.source==='local_rule'?'已有匹配样本':'添加为样本'}}</el-button><el-button @click="previewDialog=false" :disabled="previewLoading">关闭</el-button><el-button type="primary" :loading="previewLoading" :disabled="!previewConsent||!previewText.trim()" @click="previewRoute">预览</el-button></template></el-dialog>
-<el-drawer v-model="dialog" :title="editing?'编辑模型选择规则':'新增模型选择规则'" size="640px"><el-form label-width="120px">
+<el-drawer v-model="dialog" :title="editing?'编辑路由规则':'新增路由规则'" size="640px"><el-form label-width="120px">
 <el-form-item label="虚拟模型"><el-input v-model="form.virtual_model" :disabled="!!editing" maxlength="100"/></el-form-item>
 <el-form-item label="Embedding模型"><el-select v-model="form.embedding_model" filterable style="width:100%"><el-option v-for="m in models" :key="m.name" :value="m.name" :label="m.name"/></el-select></el-form-item>
 <el-form-item v-for="key in ['simple_model_group','complex_model_group']" :key="key" :label="key==='simple_model_group'?'简单任务组':'复杂任务组'"><el-select v-model="(form as any)[key]" filterable style="width:100%"><el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name" :disabled="g.status!=='enabled'"/></el-select></el-form-item>

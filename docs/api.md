@@ -70,4 +70,4 @@
 
 账号新增/编辑支持 `protocol_config`：以 `openai-completions`、`openai-responses`、`anthropic-messages`（可同时选择）或独立 `ollama` 为键，值为 `{ "path_prefix": "/v1", "auth_type": "bearer" }`。Anthropic 也允许 `x-api-key`。路径前缀可留空，不允许查询参数、片段或路径穿越。`protocol` 保留为主协议及旧接口兼容字段。`default_test_model` 为本账号已启用映射的逻辑模型名，传 null 清空。连接测试只读取模型列表，可返回 `test_model`、`model_available`，未找到返回 `TEST_MODEL_NOT_FOUND`，不改变账号的正常连接状态。
 
-智能模型选择保留 `/api/admin/smart-route` 接口兼容性：样本列表支持classification/q筛选；日志支持q（Request ID/模型/规范化文本）、source（local_rule/vector/fallback/error/legacy）、request_kind（real/preview），新增GET `/logs/{id}` 详情。预览保存独立决策，返回request_id/source/confidence/normalized_text/evidence；本地精确匹配时embedding_request_id为空。CSV保留两列模板兼容，允许similarity_threshold与remark可选列。统计含previews计数和source分布，Token不重复计Embedding子调用。
+智能路由保留 `/api/admin/smart-route` 接口兼容性：样本列表支持classification/q筛选；日志支持q（Request ID/模型/规范化文本）、source（local_rule/vector/fallback/error/legacy）、request_kind（real/preview），新增GET `/logs/{id}` 详情。预览保存独立决策，返回request_id/source/confidence/normalized_text/evidence；本地精确匹配时embedding_request_id为空。CSV保留两列模板兼容，允许similarity_threshold与remark可选列。统计含previews计数和source分布，Token不重复计Embedding子调用。
