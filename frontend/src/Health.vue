@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import axios from 'axios'
+import {branding} from './ui/branding'
 type Health = { status: string; checks: Record<string, string>; phase: number }
 const health = ref<Health | null>(null)
 const loading = ref(false)
@@ -19,9 +20,9 @@ onMounted(refresh)
 </script>
 <template>
   <div class="page health-page">
-    <header><div class="brand">HD</div><strong>合力数据AI网关</strong><span>HeliData AI Gateway</span></header>
+    <header><img v-if="branding.logo" :src="branding.logo" alt="Logo" class="health-logo"/><div v-else class="brand">HD</div><strong>{{branding.system_name}}</strong><span>服务状态</span></header>
     <main>
-      <div class="eyebrow">运行环境 · 阶段 {{health?.phase ?? '—'}}</div>
+      <div class="eyebrow">运行环境 · 实时检查</div>
       <h1>服务运行状态</h1>
       <p>检查网关基础服务的实际可用性。</p>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -33,7 +34,8 @@ onMounted(refresh)
       </div>
       <el-empty v-else-if="!loading" description="暂时无法读取服务状态" />
       <el-button type="primary" :loading="loading" @click="refresh">刷新检查</el-button>
-      <section><h2>部署信息</h2><p>Nginx · FastAPI · PostgreSQL · Redis · Supervisor</p><p>所有持久化数据保存在 /data。已开放 Chat Completions、SSE、账号调度与故障转移；四级并发、等待队列与配额已接入；调用日志已持久化并支持 Request ID 查询；Token、流式 TTFT、Tokens/s 及小时 / 日用量汇总已接入；Dashboard 展示真实运行状态、趋势与排行。Responses、Messages、Embeddings、Rerank 和图片生成接口已接入；Chat 与 Messages 支持协议转换。</p></section>
+      <router-link to="/admin/dashboard" class="health-return">返回工作台 →</router-link>
+      <section><h2>检查说明</h2><p>状态反映本次检查时 API 服务、数据库、缓存和数据磁盘的可用性。点击刷新可重新检查。</p><p>上游模型的连接状态和调度情况，请在管理后台的模型供应商页面查看。</p></section>
     </main>
   </div>
 </template>
