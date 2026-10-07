@@ -2,7 +2,7 @@
 
 合力数据AI网关（HeliData AI Gateway）为团队提供统一的模型接入、访问授权、智能路由、内容合规和调用分析。通过管理后台配置模型供应商、模型组、用户与用户组，统一管理 API Key、Token 配额和并发容量，追踪每次请求的模型选择、审核结果与上游调用链路。
 
-当前版本 **v1.0.2**，数据库迁移版本 **0031**。内部部署入口：[访问应用](http://192.168.31.97:18080)。详细功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
+当前版本 **v1.0.3**，数据库迁移版本 **0031**。内部部署入口：[访问应用](http://192.168.31.97:18080)。详细功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
 
 ## 主要功能
 
@@ -83,7 +83,7 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 ```bash
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.2 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.3 .
 ./start.sh
 curl -fsS http://127.0.0.1:18080/health
 ```
@@ -132,10 +132,10 @@ sudo ./stop-offline.sh && sudo ./start-offline.sh  # 重启
 
 `deployment.env` 保存选择的容器名称、镜像、数据目录和端口，不包含管理员密码。离线镜像标签为 `helidata-ai-gateway:v1.0.1-offline`，启动使用 `--pull=never`。首次就绪等待默认 300 秒；如启动失败，保留容器及数据，排查后使用启动脚本重试。完整说明见[离线部署手册](offline/README.md)。配置外部模型供应商后，外部模型调用仍需要对应网络与 API Key。
 
-维护者构建 v1.0.2 离线包时，先构建完整基础镜像 `helidata-ai-gateway:v1.0.2`，再执行：
+维护者构建 v1.0.3 离线包时，先构建完整基础镜像 `helidata-ai-gateway:v1.0.3`，再执行：
 
 ```bash
-docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.2-offline .
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.3-offline .
 python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
 ```
 
@@ -152,14 +152,14 @@ cd /opt/AIGateway
 ./stop.sh && ./start.sh  # 重启
 ```
 
-首次启动使用本地镜像 `helidata-ai-gateway:v1.0.2` 创建容器，默认名称 `helidata-ai-gateway`、端口 `18080`，数据保存在脚本所在目录的 `data/`。已有容器沿用原镜像与配置；升级镜像请按[部署手册](docs/deployment.md)执行。
+首次启动使用本地镜像 `helidata-ai-gateway:v1.0.3` 创建容器，默认名称 `helidata-ai-gateway`、端口 `18080`，数据保存在脚本所在目录的 `data/`。已有容器沿用原镜像与配置；升级镜像请按[部署手册](docs/deployment.md)执行。
 
 脚本面向 Linux Bash，可从任意工作目录调用。Docker 服务需已启动，当前用户需有 Docker 操作权限；无执行权限时也可用 `bash start.sh` / `bash stop.sh`。查看帮助：`./start.sh --help`、`./stop.sh --help`。
 
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
 | `APP_CONTAINER_NAME` | `helidata-ai-gateway` | 操作的容器名称 |
-| `APP_IMAGE` | `helidata-ai-gateway:v1.0.2` | 仅首次创建容器时使用的本地镜像 |
+| `APP_IMAGE` | `helidata-ai-gateway:v1.0.3` | 仅首次创建容器时使用的本地镜像 |
 | `APP_PORT` | `18080` | 宿主机端口，映射容器的 80 端口 |
 | `APP_DATA_DIR` | 应用目录下的 `data/` | 宿主机持久化目录 |
 | `APP_START_TIMEOUT` | `180` | 启动健康检查等待秒数 |

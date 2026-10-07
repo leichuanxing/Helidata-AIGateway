@@ -45,7 +45,7 @@ class ApplicationScriptsTest(unittest.TestCase):
   self.assertIn(['start','helidata-ai-gateway'],self.calls())
  def test_first_start_uses_local_image_and_preserves_spaces(self):
   r=self.run_script('start.sh',{'exists':False});self.assertEqual(r.returncode,0,r.stderr)
-  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.2');self.assertIn('unless-stopped',run)
+  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.3');self.assertIn('unless-stopped',run)
  def test_missing_image_does_not_create_container(self):
   r=self.run_script('start.sh',{'exists':False,'image_available':False});self.assertNotEqual(r.returncode,0);self.assertFalse(self.data.exists());self.assertFalse(any(a[0]=='run' for a in self.calls()))
  def test_mount_and_port_mismatch_block_changes(self):
