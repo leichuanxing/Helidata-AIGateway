@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import {computed,ref,onMounted} from 'vue'
+import {computed,ref,onMounted,watch} from 'vue'
 import {branding,loadBranding} from './ui/branding'
 import {useRoute,useRouter} from 'vue-router'
 import {useAuth} from './stores/auth'
 import {dark,collapsed,toggleTheme,toggleSidebar} from './ui/preferences'
 import {navigating} from './ui/navigation'
 const route=useRoute(),router=useRouter(),auth=useAuth(),help=ref(false),about=ref(false),version=ref('')
+const logoFailed=ref(false)
+watch(()=>branding.logo,()=>{logoFailed.value=false})
 onMounted(loadBranding)
 const operationsReady=import.meta.env.VITE_OPERATIONS_READY!=='false'
 const portalMode=computed(()=>route.path.startsWith('/portal/')||auth.user?.role==='user')
@@ -40,7 +42,7 @@ async function openAbout(){about.value=true;if(version.value)return;try{const re
 <div v-if="['/login','/first-password'].includes(route.path)"><button class="public-theme icon-button" :aria-label="dark?'切换浅色主题':'切换深色主题'" @click="toggleTheme"><UiIcon :name="dark?'sun':'moon'"/></button><router-view/></div>
 <div v-else class="shell reference-shell" :class="{collapsed}">
   <aside class="sidebar">
-    <div class="brand"><img v-if="branding.logo" :src="branding.logo" alt="Logo" style="width:34px;height:34px;object-fit:contain"/><b v-else>HD</b><strong v-if="!collapsed" :title="branding.system_name">{{branding.system_name}}</strong></div>
+    <router-link class="brand" :to="auth.user?.role==='user'?'/portal/models':'/admin/dashboard'" :aria-label="branding.system_name+'，返回首页'" :title="branding.system_name"><span class="brand-symbol" aria-hidden="true"><img v-if="branding.logo&&!logoFailed" :src="branding.logo" alt="" @error="logoFailed=true"/><span v-else class="brand-fallback">HD</span></span><span v-if="!collapsed" class="brand-copy"><strong>{{branding.system_name}}</strong><small>AI Gateway</small></span></router-link>
     <nav aria-label="主导航"><el-tooltip v-for="link in links" :key="link.to" :content="link.label" placement="right" :disabled="!collapsed"><router-link :to="link.to" :class="{selected:active(link.to)}" :aria-label="link.label"><UiIcon :name="link.icon"/><span v-if="!collapsed">{{link.label}}</span></router-link></el-tooltip></nav>
     <div class="sidebar-account"><el-dropdown trigger="click" placement="top-start" @command="command"><button class="user-menu" aria-label="用户菜单"><UiIcon name="users"/><span v-if="!collapsed" class="account-name">{{auth.user?.name||auth.user?.username}}</span><span v-if="!collapsed">⌃</span></button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="auth.user?.role!=='user'" command="admin">管理后台</el-dropdown-item><el-dropdown-item command="portal">用户中心</el-dropdown-item><el-dropdown-item command="profile">修改密码 / 个人设置</el-dropdown-item><el-dropdown-item v-if="auth.user?.role==='super_admin'&&operationsReady" command="backups" divided>数据备份</el-dropdown-item><el-dropdown-item v-if="auth.user?.role!=='user'&&operationsReady" command="audit">管理审计</el-dropdown-item><el-dropdown-item command="logout" divided>退出登录</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
   </aside>

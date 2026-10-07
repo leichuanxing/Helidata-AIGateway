@@ -1,6 +1,6 @@
 # 合力数据AI网关
 
-HeliData AI Gateway提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。当前应用版本v0.2.1，数据库版本0028，正式入口为http://192.168.31.97:18080。当前功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
+HeliData AI Gateway提供模型供应商、模型权限、并发与配额、协议适配、智能路由、内容审核和运维管理。当前应用版本v0.2.2，数据库版本0029，正式入口为http://192.168.31.97:18080。当前功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
 
 ## 技术架构与目录
 
@@ -10,7 +10,7 @@ Vue3 / TypeScript / Element Plus / ECharts前端通过Nginx访问FastAPI。单�
 | --- | --- |
 | frontend/ | 管理后台、个人门户、主题、图表和响应式页面 |
 | backend/app/ | API、认证、网关流水线、Provider、后台作业 |
-| backend/alembic/ | 0001至0022迁移 |
+| backend/alembic/ | 0001至0029迁移 |
 | config/ | config.yaml.example模板，无生产凭据 |
 | docker/ | 完整Dockerfile、Nginx、Supervisor、entrypoint和模型下载脚本 |
 | models/compliance/ | 固定版本权重、校验清单；下载脚本可重建 |
@@ -23,11 +23,11 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 ```bash
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.2.1 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.2.2 .
 mkdir -p /opt/AIGateway/data
 docker run -d --name helidata-ai-gateway \
   -p 18080:80 -v /opt/AIGateway/data:/data:Z \
-  --restart unless-stopped helidata-ai-gateway:v0.2.1
+  --restart unless-stopped helidata-ai-gateway:v0.2.2
 curl -fsS http://127.0.0.1:18080/health
 ```
 
