@@ -1,12 +1,12 @@
-# v1.0.1 离线部署
+# v1.0.2 离线部署
 
 适用于 Linux amd64（x86_64）。目标机器须预装 Docker Engine、Bash、coreutils、findutils、util-linux；建议至少 4 核、8 GB 内存及 20 GB 空闲磁盘。部署包不包含 Docker 安装器。
 
 镜像包含应用、PostgreSQL/pgvector、Redis、Nginx 和本地模型资源，部署无需联网。配置外部模型供应商后，调用外部模型仍需要对应网络及 API Key。
 
 ```bash
-tar -xzf helidata-ai-gateway-v1.0.1-linux-amd64-offline.tar.gz
-cd helidata-ai-gateway-v1.0.1-linux-amd64
+tar -xzf helidata-ai-gateway-v1.0.2-linux-amd64-offline.tar.gz
+cd helidata-ai-gateway-v1.0.2-linux-amd64
 sudo ./deploy-offline.sh
 ```
 
