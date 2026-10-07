@@ -1,6 +1,6 @@
 from typing import Literal
 from urllib.parse import urlsplit
-from pydantic import BaseModel,ConfigDict,Field,SecretStr,field_validator,model_validator
+from pydantic import BaseModel,ConfigDict,Field,SecretStr,field_validator,model_validator,model_serializer
 from app.providers.registry import PROVIDER_TYPES
 from app.schemas.models import MappingInput
 
@@ -27,6 +27,12 @@ class ProtocolRoute(BaseModel):
     path_prefix: str=Field(default='',max_length=512)
     api_url: str | None=Field(default=None,max_length=2048)
     auth_type: Literal['bearer','x-api-key']='bearer'
+
+    @model_serializer(mode='wrap')
+    def serialize(self,handler):
+        data=handler(self)
+        if self.api_url is None:data.pop('api_url',None)
+        return data
 
     @field_validator('api_url')
     @classmethod

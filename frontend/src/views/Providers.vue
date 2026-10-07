@@ -19,9 +19,12 @@ const protocolOptions=computed(()=>Array.from(new Set([...availableProtocols.val
 const selectedProtocols=ref<string[]>(['openai-completions','openai-responses'])
 const routes=reactive<Record<string,ProtocolRoute>>({})
 const testModels=computed(()=>mappings.value.filter(m=>m.status==='enabled'&&m.logical_model.trim()).map(m=>({...m,logical_model:m.logical_model.trim(),upstream_model:m.upstream_model.trim()})))
+const originalProvider=ref<Provider|null>(null),originalProtocols=ref<string[]>([])
 const separateUrls=ref(false),protocolUrls=reactive<Record<string,string>>({})
 function syncProtocols(){if(selectedProtocols.value.includes('ollama')&&selectedProtocols.value.length>1){selectedProtocols.value=[selectedProtocols.value.at(-1)==='ollama'?'ollama':selectedProtocols.value.filter(p=>p!=='ollama')[0]!]}for(const p of selectedProtocols.value){if(!routes[p])routes[p]={path_prefix:'',auth_type:p==='anthropic-messages'?'x-api-key':'bearer'};if(!protocolUrls[p])protocolUrls[p]=form.base_url}}
-function connectionConfig(){const first=selectedProtocols.value[0];return {protocol:first==='anthropic-messages'?'anthropic':first==='ollama'?'ollama':'openai',protocol_config:Object.fromEntries(selectedProtocols.value.map(p=>[p,{path_prefix:'',auth_type:routes[p]!.auth_type,...(separateUrls.value?{api_url:protocolUrls[p]?.trim()}: {})}]))}}
+function unchangedConnection(){const p=originalProvider.value;if(!p)return false;const names=p.protocol_config?Object.keys(p.protocol_config):originalProtocols.value;return names.length===selectedProtocols.value.length&&selectedProtocols.value.every(name=>{const r:ProtocolRoute=p.protocol_config?p.protocol_config[name]:{path_prefix:'',auth_type:p.protocol==='anthropic'?'x-api-key':'bearer'};return !!r&&r.auth_type===routes[name]?.auth_type&&(r.api_url||p.base_url.replace(/\/$/,'')+(r.path_prefix||'')).replace(/\/$/,'')===(separateUrls.value?protocolUrls[name]||'':form.base_url).trim().replace(/\/$/,'')})}
+function connectionBaseUrl(){return unchangedConnection()?originalProvider.value!.base_url:form.base_url.trim()}
+function connectionConfig(){if(unchangedConnection())return {protocol:originalProvider.value!.protocol,protocol_config:originalProvider.value!.protocol_config};const first=selectedProtocols.value[0];return {protocol:first==='anthropic-messages'?'anthropic':first==='ollama'?'ollama':'openai',protocol_config:Object.fromEntries(selectedProtocols.value.map(p=>[p,{path_prefix:'',auth_type:routes[p]!.auth_type,...(separateUrls.value?{api_url:protocolUrls[p]?.trim()}: {})}]))}}
 function loadProtocols(p?:Provider){
   for(const k of Object.keys(routes))delete routes[k]
   for(const k of Object.keys(protocolUrls))delete protocolUrls[k]
@@ -52,13 +55,13 @@ async function open(p?:Provider&{config_version?:number}){
   const gen=++openGeneration;verifyAfterSave.value=false;mappingLoading.value=false
   editing.value=p?.id??null;editorVersion.value=p?.config_version??null;hasKey.value=p?.has_api_key||false
   Object.assign(form,blank(),p?{name:p.name,provider_type:p.provider_type,protocol:p.protocol,protocol_type:p.protocol_type,account_type:p.account_type,base_url:p.base_url,proxy:p.proxy||'',priority:p.priority,max_concurrency:p.max_concurrency,status:p.status,remark:p.remark,default_test_model:p.default_test_model||''}:{})
-  loadProtocols(p)
+  originalProvider.value=p||null;loadProtocols(p);originalProtocols.value=[...selectedProtocols.value]
   mappings.value=[{logical_model:'',upstream_model:'',model_type:form.protocol_type==='multimodal'?'multimodal':form.protocol_type==='image'?'image':form.protocol_type==='vector'?'embedding':'text',status:'enabled'}];discovered.value=[];mappingsReady.value=!p;dialog.value=true
   if(p){mappingLoading.value=true;try{const rows=(await api.get('/admin/providers/'+p.id+'/model-mappings')).data.data;if(gen!==openGeneration)return;mappings.value=rows.length?rows.map((m:ProviderDraftMapping)=>({logical_model:m.logical_model,upstream_model:m.upstream_model,model_type:m.model_type,status:m.status})):mappings.value;mappingsReady.value=true}catch(e){if(gen===openGeneration)ElMessage.error(message(e))}finally{if(gen===openGeneration)mappingLoading.value=false}}
 }
 async function discoverDraft(){
   if(!validateUrls())return;const gen=openGeneration;discovering.value=true
-  try{const connection:any={name:form.name||'discovery',provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:form.base_url.trim(),proxy:form.proxy||null};if(form.api_key)connection.api_key=form.api_key;if(editing.value&&!form.clear_api_key)connection.provider_id=editing.value
+  try{const connection:any={name:form.name||'discovery',provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:connectionBaseUrl(),proxy:form.proxy||null};if(form.api_key)connection.api_key=form.api_key;if(editing.value&&!form.clear_api_key)connection.provider_id=editing.value
   const found=(await api.post('/admin/providers/discover-models',connection)).data.data.models.map((m:{id:string})=>m.id);if(gen!==openGeneration||!dialog.value)return;discovered.value=found;ElMessage.success('发现 '+discovered.value.length+' 个模型')}catch(e){if(gen===openGeneration)ElMessage.error(message(e))}finally{if(gen===openGeneration)discovering.value=false}
 }
 function changeType(){const t=selectedType.value;if(t){form.account_type='standard';form.protocol=t.protocols.includes('openai')?'openai':t.protocols[0]||'openai';if(!availableCategories.value.some(([k])=>k===form.protocol_type))form.protocol_type=availableCategories.value[0]?.[0]||'text';form.base_url=t.base_url;loadProtocols();discovered.value=[]}}
@@ -80,7 +83,7 @@ async function save(){
   if(form.protocol_type&&mappings.value.some(m=>(form.protocol_type==='multimodal'?m.model_type:categoryOf(m.model_type))!==form.protocol_type)){ElMessage.error('模型映射类型须与账号协议类型一致');return}
   saving.value=true
   try{
-    const payload:any={name:form.name,provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:form.base_url.trim(),proxy:form.proxy||null,priority:form.priority,max_concurrency:form.max_concurrency,status:form.status,remark:form.remark,default_test_model:form.default_test_model||null,model_mappings:mappings.value.map(m=>({...m,logical_model:m.logical_model.trim(),upstream_model:m.upstream_model.trim()}))}
+    const payload:any={name:form.name,provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:connectionBaseUrl(),proxy:form.proxy||null,priority:form.priority,max_concurrency:form.max_concurrency,status:form.status,remark:form.remark,default_test_model:form.default_test_model||null,model_mappings:mappings.value.map(m=>({...m,logical_model:m.logical_model.trim(),upstream_model:m.upstream_model.trim()}))}
     if(editing.value&&editorVersion.value!==null)payload.expected_config_version=editorVersion.value
     if(form.api_key)payload.api_key=form.api_key
     if(editing.value)payload.clear_api_key=form.clear_api_key
