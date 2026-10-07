@@ -25,7 +25,17 @@ def clean_url(value):
 class ProtocolRoute(BaseModel):
     model_config=ConfigDict(extra='forbid')
     path_prefix: str=Field(default='',max_length=512)
+    api_url: str | None=Field(default=None,max_length=2048)
     auth_type: Literal['bearer','x-api-key']='bearer'
+
+    @field_validator('api_url')
+    @classmethod
+    def url(cls,value):return clean_url(value) if value is not None else None
+
+    @model_validator(mode='after')
+    def complete_address(self):
+        if self.api_url and self.path_prefix:raise ValueError('API URL cannot be combined with a path prefix')
+        return self
 
     @field_validator('path_prefix')
     @classmethod

@@ -63,6 +63,6 @@ def build_adapter(provider,key,operation=None):
     if name is None:raise ProviderFailure('UNSUPPORTED_OPERATION')
     protocol=NAMES[name];route=configurations(provider)[name]
     adapter=CustomOpenAIProvider if provider.provider_type=='custom_openai' and protocol=='openai' else ADAPTERS[protocol]
-    result=adapter(provider.base_url.rstrip('/')+route['path_prefix'],key or '',provider.proxy)
+    result=adapter(route.get('api_url') or provider.base_url.rstrip('/')+route.get('path_prefix',''),key or '',provider.proxy)
     result.auth_type=route['auth_type'];result.wire_protocol=protocol;result.protocol_name=name
     return result
