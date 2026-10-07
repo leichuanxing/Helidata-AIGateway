@@ -29,13 +29,28 @@ async def provider(db,provider_id,lock=False):
     return row
 
 
-async def canonical(db,name,model_type):
+async def canonical(db,name,model_type,provider_id=None,mapping_id=None):
     from app.models.routing import RouteConfig
     if await db.scalar(select(RouteConfig.id).where(RouteConfig.virtual_model==name)):
         raise APIError(409,'ROUTE_NAME_CONFLICT','虚拟模型不能配置上游映射')
     await db.execute(insert(LogicalModel).values(name=name,model_type=model_type).on_conflict_do_nothing(index_elements=['name']))
     row=await db.get(LogicalModel,name)
-    if row.model_type!=model_type: raise APIError(409,'MODEL_TYPE_CONFLICT','同一逻辑模型的类型必须一致')
+    if row.model_type==model_type:return
+    if not {row.model_type,model_type}<={'text','reasoning','multimodal'}:
+        raise APIError(409,'MODEL_TYPE_CONFLICT','同一逻辑模型的类型必须一致')
+    # Change a Chat model's capability only when all retained mappings agree.
+    query=select(ProviderModelMapping.id).join(Provider,Provider.id==ProviderModelMapping.provider_id).where(
+        ProviderModelMapping.logical_model==name,ProviderModelMapping.deleted_at.is_(None),
+        Provider.deleted_at.is_(None),ProviderModelMapping.model_type!=model_type)
+    if provider_id is not None:query=query.where(ProviderModelMapping.provider_id!=provider_id)
+    if mapping_id is not None:query=query.where(ProviderModelMapping.id!=mapping_id)
+    if await db.scalar(query.limit(1)):
+        raise APIError(409,'MODEL_TYPE_CONFLICT','模型 '+name+' 被其他账号映射为不同类型，请使用独立请求模型名称或先统一相关映射')
+    from app.models.user import ModelGroup,ModelGroupModel
+    if model_type!='multimodal' and await db.scalar(select(ModelGroup.id).join(ModelGroupModel,ModelGroupModel.model_group_id==ModelGroup.id).where(
+        ModelGroupModel.logical_model==name,ModelGroup.protocol_type=='multimodal').limit(1)):
+        raise APIError(409,'MODEL_GROUP_TYPE_CONFLICT','模型 '+name+' 已被多模态模型组引用，请先调整分组成员')
+    row.model_type=model_type
 
 
 @router.post('/providers/{provider_id}/discover-models')
@@ -103,7 +118,7 @@ async def mapping(db,provider_id,mapping_id):
 
 @router.put('/providers/{provider_id}/model-mappings/{mapping_id}')
 async def edit(provider_id: int,mapping_id: int,body: MappingInput,request: Request,actor=Depends(administrator),db=Depends(get_session)):
-    row=await mapping(db,provider_id,mapping_id);await canonical(db,body.logical_model,body.model_type)
+    row=await mapping(db,provider_id,mapping_id);await canonical(db,body.logical_model,body.model_type,mapping_id=row.id)
     account=await provider(db,provider_id)
     category_mapping(account,body)
     from app.services.provider_rules import protect_vector_mapping

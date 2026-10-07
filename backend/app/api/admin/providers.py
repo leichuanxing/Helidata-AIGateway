@@ -71,7 +71,7 @@ async def validate_test_model(db,row,submitted=None):
 async def sync_mappings(db,row,submitted):
     from app.api.admin.model_mappings import canonical
     from app.services.provider_rules import category_mapping,protect_removed
-    for item in submitted:category_mapping(row,item);await canonical(db,item.logical_model,item.model_type)
+    for item in submitted:category_mapping(row,item);await canonical(db,item.logical_model,item.model_type,provider_id=row.id)
     rows=(await db.scalars(select(ProviderModelMapping).where(ProviderModelMapping.provider_id==row.id,
         ProviderModelMapping.deleted_at.is_(None)).with_for_update())).all()
     previous={m.logical_model:m for m in rows};wanted={m.logical_model:m for m in submitted}

@@ -178,7 +178,7 @@ class LogicalModel(Base):
 
 class ProviderModelMapping(Base):
     __tablename__='provider_model_mappings'
-    __table_args__=(ForeignKeyConstraint(['logical_model','model_type'],['logical_models.name','logical_models.model_type'],ondelete='RESTRICT',name='fk_mapping_logical_model'),
+    __table_args__=(ForeignKeyConstraint(['logical_model','model_type'],['logical_models.name','logical_models.model_type'],ondelete='RESTRICT',onupdate='CASCADE',name='fk_mapping_logical_model'),
         CheckConstraint("status IN ('enabled','disabled')",name='ck_mapping_status'))
     id: Mapped[int]=mapped_column(primary_key=True)
     provider_id: Mapped[int]=mapped_column(ForeignKey('providers.id',ondelete='RESTRICT'),index=True)
