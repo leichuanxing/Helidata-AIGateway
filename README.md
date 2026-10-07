@@ -177,3 +177,14 @@ OpenAI兼容SDK的`base_url`设为GATEWAY_BASE，使用网关API Key。Responses
 
 
 智谱接入：模型供应商支持“智谱开放平台”和“智谱 Coding Plan”，选择类型自动填入对应Base URL。填写对应API Key和实际可用模型映射后保存；接入范围和模型发现限制见[系统状态](docs/current-status.md)。
+
+## 离线部署
+
+完整镜像及交互式部署包见 [离线部署说明](offline/README.md)。首次部署可指定数据目录、管理员账号和密码、应用端口。
+
+构建维护命令：
+
+```bash
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.1-offline .
+python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
+```

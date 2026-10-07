@@ -1,3 +1,5 @@
 /start.sh text eol=lf
 /stop.sh text eol=lf
 /scripts/application.sh text eol=lf
+
+/offline/*.sh text eol=lf
