@@ -22,7 +22,7 @@ async function submit(){
     <span class="login-language" aria-label="当前语言">简体中文</span>
     <main class="login-main">
       <section class="login-card" aria-labelledby="login-title">
-        <h1 id="login-title" class="login-title"><span>登录</span><img v-if="branding.logo" :src="branding.logo" alt=""/><span v-else class="login-mark" aria-hidden="true">HD</span><strong>{{branding.system_name}}</strong></h1>
+        <h1 id="login-title" class="login-title"><span>登录</span><strong>{{branding.system_name}}</strong></h1>
         <el-alert v-if="error" :title="error" type="error" :closable="false" role="alert"/>
         <el-form class="login-form" label-position="top" @submit.prevent="submit">
           <el-form-item label="用户名"><el-input v-model="username" aria-label="用户名" placeholder="请输入用户名" autocomplete="username" :disabled="loading" autofocus><template #prefix><UiIcon name="user"/></template></el-input></el-form-item>
@@ -44,9 +44,7 @@ async function submit(){
 .login-main{flex:1;display:flex;align-items:center;justify-content:center;padding:76px 24px 48px}
 .login-card{width:400px;max-width:100%;padding:40px;background:var(--surface);border:1px solid rgba(255,255,255,.65);border-radius:12px;box-shadow:0 5px 18px rgba(25,45,70,.12)}
 .login-title{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 34px;font-size:20px;line-height:1.4;font-weight:400}
-.login-title img{width:30px;height:30px;object-fit:contain;flex-shrink:0}
 .login-title strong{font-size:18px;font-weight:600;color:var(--el-color-primary);overflow-wrap:anywhere;min-width:0}
-.login-mark{display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:7px;background:var(--el-color-primary);color:#fff;font-size:12px;font-weight:700}
 .login-form :deep(.el-form-item){margin-bottom:22px}
 .login-form :deep(.el-form-item__label){font-size:14px;color:var(--text);padding-bottom:7px;line-height:22px}
 .login-form :deep(.el-input__wrapper){min-height:44px;padding:1px 12px;border-radius:6px}
