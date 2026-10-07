@@ -27,33 +27,33 @@
 
 集中查看业务指标、实时负载与平滑趋势图。
 
-![概览：业务指标、实时负载与趋势](pic/overview.png)
+![概览：业务指标、实时负载与趋势](pic/overview.jpg)
 
 <details>
 <summary>模型供应商：账号、协议与模型映射</summary>
 
-![模型供应商：账号、协议与模型映射](pic/providers.png)
+![模型供应商：账号、协议与模型映射](pic/providers.jpg)
 
 </details>
 
 <details>
 <summary>用量统计：筛选、趋势与维度分析</summary>
 
-![用量统计：时间筛选、Token 指标、趋势与维度分析](pic/usage-statistics.png)
+![用量统计：时间筛选、Token 指标、趋势与维度分析](pic/usage-statistics.jpg)
 
 </details>
 
 <details>
 <summary>调用日志：组合筛选与请求终态</summary>
 
-![调用日志：组合筛选、模型、请求终态与详情入口](pic/call-logs.png)
+![调用日志：组合筛选、模型、请求终态与详情入口](pic/call-logs.jpg)
 
 </details>
 
 <details>
 <summary>系统设置：基础与品牌、页签保存</summary>
 
-![系统设置：基础与品牌配置、页签保存与系统状态入口](pic/system-settings.png)
+![系统设置：基础与品牌配置、页签保存与系统状态入口](pic/system-settings.jpg)
 
 </details>
 
