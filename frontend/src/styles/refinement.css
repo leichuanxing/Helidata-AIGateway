@@ -109,11 +109,6 @@ button,a,input,textarea{touch-action:manipulation}
 .page-view .profile-page{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:start}
 .page-view .profile-page>.page-heading{grid-column:1/-1;margin-bottom:0}
 .page-view .profile-page>.panel{max-width:none!important;margin-top:0}
-.health-page main{margin:36px auto}
-.health-page .cards>div{border-radius:12px}
-.health-page header{box-shadow:var(--surface-shadow)}
-.health-page .health-logo{width:34px;height:34px;object-fit:contain}
-.health-page .health-return{color:var(--el-color-primary);margin-left:16px;font-size:13px}
 .page-view .usage-notes{color:var(--muted);font-size:12px;margin:16px 0;line-height:1.8}
 .page-view .usage-notes summary{cursor:pointer;width:fit-content}
 .page-enter-active{transition:opacity .2s ease,transform .2s var(--motion-ease)}

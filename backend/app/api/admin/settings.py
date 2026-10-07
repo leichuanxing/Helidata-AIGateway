@@ -11,6 +11,12 @@ from app.services.sessions import audit
 router=APIRouter(tags=['系统设置'])
 
 
+@router.get('/api/admin/settings/system-status')
+async def system_status(actor=Depends(super_administrator)):
+    from app.services.system_status import snapshot
+    return {'data':await snapshot()}
+
+
 @router.get('/api/public/settings')
 async def public():return {'data':operations.public()}
 

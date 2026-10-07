@@ -27,7 +27,6 @@ const Keys=()=>import('./views/Keys.vue')
 const Profile=()=>import('./views/Profile.vue')
 const UserDetail=()=>import('./views/UserDetail.vue')
 const Portal=()=>import('./views/Portal.vue')
-const Health=()=>import('./Health.vue')
 const Dashboard=()=>import('./views/Dashboard.vue')
 const Usage=()=>import('./views/Usage.vue')
 const CallLogs=()=>import('./views/CallLogs.vue')
@@ -58,13 +57,11 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/portal/api-keys',component:Keys},
   {path:'/portal/profile',component:Profile},
   {path:'/portal/models',component:Portal},
-  {path:'/health-status',component:Health},
   {path:'/:pathMatch(.*)*',redirect:'/'}
 ]})
 router.beforeEach(async to=>{
   navigating.value=true
   const auth=useAuth(pinia);await auth.init()
-  if(to.path==='/health-status')return true
   if(!auth.user)return to.path==='/login'?true:'/login'
   if(auth.user.must_change_password)return to.path==='/first-password'?true:'/first-password'
   if(to.path==='/login'||to.path==='/first-password')return auth.user.role==='user'?'/portal/models':'/admin/dashboard'
