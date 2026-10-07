@@ -99,7 +99,7 @@ class RefreshSession(Base):
 class ModelGroup(Base):
     __tablename__ = 'model_groups'
     __table_args__ = (CheckConstraint("status IN ('enabled','disabled')", name='ck_model_group_status'),
-        CheckConstraint("protocol_type IN ('text','image','vector')",name='ck_model_group_protocol'))
+        CheckConstraint("protocol_type IN ('text','multimodal','image','vector')",name='ck_model_group_protocol'))
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
     description: Mapped[str] = mapped_column(Text, default='', server_default='')

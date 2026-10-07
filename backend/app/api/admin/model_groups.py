@@ -17,7 +17,7 @@ async def group_data(db,row):
 
 
 @router.get('')
-async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=80),protocol_type: str=Query('',pattern=r'^(text|image|vector)?$')):
+async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=80),protocol_type: str=Query('',pattern=r'^(text|multimodal|image|vector)?$')):
     query=select(ModelGroup)
     if q: query=query.where(ModelGroup.name.icontains(q,autoescape=True))
     if protocol_type: query=query.where(ModelGroup.protocol_type==protocol_type)
@@ -48,10 +48,12 @@ async def save(db,actor,request,body,row=None):
         categories={protocol_category(m.model_type) for m in found.values()}
         category=next(iter(categories)) if len(categories)==1 else None
     else:
-        if any(protocol_category(m.model_type)!=category for m in found.values()):
+        # Preserve existing text groups containing multimodal Chat models.
+        # Explicit multimodal groups must contain multimodal models only.
+        if any((m.model_type!='multimodal' if category=='multimodal' else protocol_category(m.model_type)!=category) for m in found.values()):
             raise APIError(409,'MODEL_GROUP_TYPE_CONFLICT','模型与分组协议类型不一致')
         for name in names:
-            if name not in found:db.add(LogicalModel(name=name,model_type={'text':'text','image':'image','vector':'embedding'}[category]))
+            if name not in found:db.add(LogicalModel(name=name,model_type={'text':'text','multimodal':'multimodal','image':'image','vector':'embedding'}[category]))
     if row:
         from app.models.routing import RouteConfig
         if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)):

@@ -26,7 +26,7 @@ class ModelGroupInput(BaseModel):
     name: str=Field(min_length=1,max_length=80)
     description: str=Field(default='',max_length=2000)
     status: Literal['enabled','disabled']='enabled'
-    protocol_type: Literal['text','image','vector'] | None=None
+    protocol_type: Literal['text','multimodal','image','vector'] | None=None
     logical_models: list[str]=Field(default_factory=list,max_length=100)
 
     @field_validator('name')

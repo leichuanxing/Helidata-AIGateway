@@ -6,8 +6,8 @@ import {formatDate} from '../ui/branding'
 import {type ModelGroup} from '../api/models'
 const rows=ref<ModelGroup[]>([]),options=ref<{name:string;model_type:string}[]>([]),page=ref(1),total=ref(0),q=ref(''),loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref<number|null>(null),error=ref(''),dragging=ref<number|null>(null)
 const dragTarget=ref<number|null>(null)
-const protocol=ref(''),categoryLabels:Record<string,string>={text:'文本',image:'文生图',vector:'向量'}
-const category=(type:string)=>type==='image'?'image':['embedding','rerank'].includes(type)?'vector':'text'
+const protocol=ref(''),categoryLabels:Record<string,string>={text:'文本',multimodal:'多模态',image:'文生图',vector:'向量'}
+const category=(type:string)=>type==='multimodal'?'multimodal':type==='image'?'image':['embedding','rerank'].includes(type)?'vector':'text'
 const visibleOptions=computed(()=>options.value.filter(o=>!form.protocol_type||category(o.model_type)===form.protocol_type))
 const blank=()=>({name:'',description:'',status:'enabled',protocol_type:'text' as string|null,logical_models:[] as string[]})
 const form=reactive(blank())
