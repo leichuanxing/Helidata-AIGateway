@@ -71,6 +71,8 @@ Vue3 / TypeScript / Element Plus / ECharts前端通过Nginx访问FastAPI。单�
 | models/compliance/ | 固定版本权重、校验清单；下载脚本可重建 |
 | docs/ | API、数据库、运维、当前功能说明及原始需求提取 |
 | pic/ | README 引用的应用界面截图 |
+| start.sh / stop.sh | 宿主机启动与正常停止脚本 |
+| scripts/ | 启停脚本共用的 Docker 检查与健康等待逻辑 |
 
 ## 系统要求、Docker构建与运行
 
@@ -80,14 +82,42 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
 docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.1 .
-mkdir -p /opt/AIGateway/data
-docker run -d --name helidata-ai-gateway \
-  -p 18080:80 -v /opt/AIGateway/data:/data:Z \
-  --restart unless-stopped helidata-ai-gateway:v1.0.1
+./start.sh
 curl -fsS http://127.0.0.1:18080/health
 ```
 
 当前服务器80端口由OpenResty使用，网关使用18080。SELinux保留`:Z`。生产访问建议使用可信HTTPS代理，来源和转发头配置一致后启用Secure Cookie。不要映射5432/6379。
+
+## 启动与停止
+
+在服务器应用目录执行：
+
+```bash
+cd /opt/AIGateway
+./start.sh          # 启动并等待健康检查；已运行时检查就绪状态
+./stop.sh           # 正常停止，保留容器、数据目录和镜像
+./stop.sh && ./start.sh  # 重启
+```
+
+首次启动使用本地镜像 `helidata-ai-gateway:v1.0.1` 创建容器，默认名称 `helidata-ai-gateway`、端口 `18080`，数据保存在脚本所在目录的 `data/`。已有容器沿用原镜像与配置；升级镜像请按[部署手册](docs/deployment.md)执行。
+
+脚本面向 Linux Bash，可从任意工作目录调用。Docker 服务需已启动，当前用户需有 Docker 操作权限；无执行权限时也可用 `bash start.sh` / `bash stop.sh`。查看帮助：`./start.sh --help`、`./stop.sh --help`。
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `APP_CONTAINER_NAME` | `helidata-ai-gateway` | 操作的容器名称 |
+| `APP_IMAGE` | `helidata-ai-gateway:v1.0.1` | 仅首次创建容器时使用的本地镜像 |
+| `APP_PORT` | `18080` | 宿主机端口，映射容器的 80 端口 |
+| `APP_DATA_DIR` | 应用目录下的 `data/` | 宿主机持久化目录 |
+| `APP_START_TIMEOUT` | `180` | 启动健康检查等待秒数 |
+| `APP_STOP_TIMEOUT` | `90` | 正常停止等待秒数 |
+
+使用自定义配置时，启动与停止必须指定相同的容器名、数据目录和端口；脚本会核对现有容器的挂载和端口。
+
+```bash
+APP_PORT=18081 APP_DATA_DIR=/srv/aigateway/data ./start.sh
+APP_PORT=18081 APP_DATA_DIR=/srv/aigateway/data ./stop.sh
+```
 
 ## 初始化管理员与数据目录
 
