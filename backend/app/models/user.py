@@ -132,6 +132,7 @@ class ApiKey(Base):
 class Provider(Base):
     __tablename__ = 'providers'
     __table_args__ = (
+        Index('uq_active_provider_name','name',unique=True,postgresql_where=sa_text('deleted_at IS NULL')),
         CheckConstraint("status IN ('enabled','disabled','deleted')",name='ck_provider_status'),
         CheckConstraint("health_status IN ('unknown','healthy','unhealthy')",name='ck_provider_health'),
         CheckConstraint('max_concurrency > 0 AND failure_count >= 0',name='ck_provider_limits'),
@@ -139,7 +140,7 @@ class Provider(Base):
         CheckConstraint("protocol_type IS NULL OR protocol_type IN ('text','multimodal','image','vector')",name='ck_provider_category'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80),unique=True)
+    name: Mapped[str] = mapped_column(String(80))
     provider_type: Mapped[str] = mapped_column(String(40))
     protocol: Mapped[str] = mapped_column(String(20))
     base_url: Mapped[str] = mapped_column(String(2048))
