@@ -41,6 +41,8 @@ class GatewayPipeline:
                 ctx.stages.append('model_permission'); await model_permission.check(db, ctx)
                 ctx.stages.append('compliance'); await compliance.check(db,ctx)
                 ctx.stages.append('smart_routing'); await smart_routing.route(db,ctx)
+                if ctx.route_config_id and ctx.original_model!=ctx.logical_model:
+                    ctx.stages.append('routed_compliance'); await compliance.check(db,ctx,routed=True)
                 ctx.stages.append('model_selection'); await model_selection.select_model(db, ctx)
                 ctx.stages.append('provider_scheduler')
                 await record_key_use(db, ctx)  # Commit and release DB connection before network I/O.
@@ -86,6 +88,7 @@ class GatewayPipeline:
                     # Detach loaded snapshots before rollback expires ORM attributes.
                     if db.in_transaction():
                         db.expunge_all();await db.rollback()
+                    await compliance.finalize(ctx)
                     if not stream_owned:
                         if ctx.stages[-2:]!=['usage','call_log']:ctx.stages.extend(['usage','call_log'])
                         await call_log.write(ctx,outcome,code)

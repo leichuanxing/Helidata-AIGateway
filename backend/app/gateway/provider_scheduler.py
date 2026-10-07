@@ -69,6 +69,12 @@ async def execute(request,ctx,resources):
             for mapping,provider in rows:
                 if len(tried)>=MAX_ATTEMPTS: break
                 tried.add(mapping.id);ctx.mapping,ctx.provider=mapping,provider
+                if ctx.route_config_id and mapping.logical_model!=ctx.logical_model:
+                    # Failover within the selected group must not bypass its model policies.
+                    from app.gateway import compliance
+                    async with session_factory() as db:
+                        ctx.stages.append('routed_compliance')
+                        await compliance.check(db,ctx,routed=True,model=mapping.logical_model)
                 attempt=AsyncExitStack()
                 entry={'provider_id':provider.id,'provider_name':provider.name,'logical_model':mapping.logical_model,
                     'upstream_model':mapping.upstream_model,'protocol':provider.protocol,'config_version':provider.config_version,

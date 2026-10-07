@@ -1,4 +1,4 @@
-"""Checks precede routing, quota and Provider admission; local semantic inference."""
+"""Check requested and routed models before Provider admission; one audit record."""
 import asyncio,json
 from time import monotonic
 import anyio
@@ -39,9 +39,10 @@ def content(ctx):
  if ctx.operation=='embeddings' and not (isinstance(value,str) or isinstance(value,list) and value and all(isinstance(v,str) for v in value)):
   raise APIError(400,'COMPLIANCE_TEXT_REQUIRED','启用审核策略时Embedding输入须为文本')
  return result
-async def load(db,ctx):
+async def load(db,ctx,model=None):
  rows=(await db.scalars(select(CompliancePolicy).where(CompliancePolicy.status=='enabled').order_by(CompliancePolicy.id))).all()
- policies=[{k:getattr(r,k) for k in ('id','name','action','risk','description','word_ids','sample_ids','group_ids','models','threshold')} for r in rows if (not r.group_ids or ctx.group.id in r.group_ids) and (not r.models or ctx.logical_model in r.models)]
+ checked=set(ctx.deferred.get('_compliance_policy_ids',[]))
+ policies=[{k:getattr(r,k) for k in ('id','name','action','risk','description','word_ids','sample_ids','group_ids','models','threshold')} for r in rows if r.id not in checked and (not r.group_ids or ctx.group.id in r.group_ids) and (not r.models or (model or ctx.logical_model) in r.models)]
  ids={i for p in policies for i in p['word_ids']};samples={i for p in policies for i in p['sample_ids']}
  words=[{k:getattr(r,k) for k in ('id','pattern','kind','risk','status')} for r in (await db.scalars(select(AuditWord).where(AuditWord.id.in_(ids)).order_by(AuditWord.id))).all()] if ids else []
  source=[{k:getattr(r,k) for k in ('id','revision','vector_status','risk','status','text')} for r in (await db.scalars(select(AuditSample).where(AuditSample.id.in_(samples)).order_by(AuditSample.id))).all()] if samples else []
@@ -58,13 +59,16 @@ async def semantic(db,ids,vectors):
    old=result.get(row['id'])
    if old is None or row['similarity']>old['similarity']:result[row['id']]={'source':'sample','id':row['id'],'risk':row['risk'],'text':row['text'],'similarity':max(-1,min(1,row['similarity']))}
  return result
-async def check(db,ctx):
+async def check(db,ctx,*,routed=False,model=None):
  from app.services.operations_settings import governance
  if not governance['compliance_enabled']:ctx.deferred['compliance']='disabled';return
  if ctx.operation=='preflight':ctx.deferred['compliance']='preflight_not_checked';return
- if getattr(ctx.request.state,'compliance_checked',False):ctx.deferred['compliance']='parent_checked';return
- started=monotonic();snapshot=await load(db,ctx);policies,words,samples=snapshot
- if not policies:ctx.deferred['compliance']='not_applicable';return
+ if ctx.deferred.get('_compliance_parent_checked'):return
+ if not routed and getattr(ctx.request.state,'compliance_checked',False):
+  ctx.deferred['_compliance_parent_checked']=True;ctx.deferred['compliance']='parent_checked';return
+ started=monotonic();snapshot=await load(db,ctx,model);policies,words,samples=snapshot
+ if not policies:
+  ctx.deferred.setdefault('compliance','not_applicable');return
  active=[w for w in words if w['status']=='enabled']
  value=content(ctx) if active or any(s['status']=='enabled' and s['vector_status']=='ready' for s in samples) else ''
  hits=await asyncio.to_thread(word_matches,active,value)
@@ -80,18 +84,24 @@ async def check(db,ctx):
    await db.commit()
    vectors=await embed(value,ctx.user.id,ctx.client_ip)
    async with session_factory() as local_db:
-    if await load(local_db,ctx)!=snapshot:raise APIError(409,'COMPLIANCE_CHANGED','审核策略或样本已变化，请重试')
+    if await load(local_db,ctx,model)!=snapshot:raise APIError(409,'COMPLIANCE_CHANGED','审核策略或样本已变化，请重试')
     found=await semantic(local_db,semantic_ids,vectors)
    for p in policies:
     selected=[dict(h,risk=p['risk'] or h['risk']) for i,h in found.items() if i in p['sample_ids'] and h['similarity']>=p['threshold']]
     if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'risk':p['risk'],'description':p['description'],'threshold':p['threshold'],'hit_count':len(selected),'evidence':sorted(selected,key=lambda h:-h['similarity'])[:20]})
+ previous=ctx.deferred.get('compliance')
+ previous=previous if isinstance(previous,dict) else {}
+ matches=previous.get('matches',[])+matches
  action='block' if any(m['action']=='block' for m in matches) else 'audit' if matches else 'pass'
- ctx.deferred['compliance']={'action':action,'matches':matches,'elapsed_ms':round((monotonic()-started)*1000,2),'log_delivery':'not_needed'}
- if policies:
-  # Release parent's DB connection before independently delivering an audit log.
-  await db.commit()
-  with anyio.CancelScope(shield=True):
-   delivery=await compliance_logs.write(dict(request_id=ctx.request_id,user_id=ctx.user.id,group_id=ctx.group.id,model=ctx.logical_model,protocol=ctx.operation,status_code=403 if action=='block' else 200,action=action,matches=matches,elapsed_ms=ctx.deferred['compliance']['elapsed_ms'],created_at=ctx.received_at))
-  ctx.deferred['compliance']['log_delivery']=delivery
+ ctx.deferred['compliance']={'action':action,'matches':matches,'elapsed_ms':round(previous.get('elapsed_ms',0)+(monotonic()-started)*1000,2),'log_delivery':'pending'}
+ ctx.deferred['_compliance_policy_ids']=list(dict.fromkeys(ctx.deferred.get('_compliance_policy_ids',[])+[p['id'] for p in policies]))
+ # Deliver once at pipeline completion, including routing failures and cancellation.
+ await db.commit()
  if action=='block':raise APIError(403,'CONTENT_BLOCKED','请求命中内容阻断策略')
  ctx.request.state.compliance_checked=True
+
+async def finalize(ctx):
+ result=ctx.deferred.get('compliance')
+ if not isinstance(result,dict) or result.get('log_delivery')!='pending':return
+ with anyio.CancelScope(shield=True):
+  result['log_delivery']=await compliance_logs.write(dict(request_id=ctx.request_id,user_id=ctx.user.id,group_id=ctx.group.id,model=ctx.original_model or ctx.logical_model,protocol=ctx.operation,status_code=403 if result['action']=='block' else 200,action=result['action'],matches=result['matches'],elapsed_ms=result['elapsed_ms'],created_at=ctx.received_at))
