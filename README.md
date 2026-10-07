@@ -2,7 +2,7 @@
 
 合力数据AI网关（HeliData AI Gateway）为团队提供统一的模型接入、访问授权、智能路由、内容合规和调用分析。通过管理后台配置模型供应商、模型组、用户与用户组，统一管理 API Key、Token 配额和并发容量，追踪每次请求的模型选择、审核结果与上游调用链路。
 
-当前版本 **v0.2.2**，数据库迁移版本 **0031**。内部部署入口：[访问应用](http://192.168.31.97:18080)。详细功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
+当前版本 **v1.0.1**，数据库迁移版本 **0031**。内部部署入口：[访问应用](http://192.168.31.97:18080)。详细功能与维护说明见[系统状态](docs/current-status.md)和[部署手册](docs/deployment.md)。
 
 ## 主要功能
 
@@ -79,11 +79,11 @@ Linux amd64及Docker Engine；建议至少4核CPU、8GiB内存、20GiB可用磁�
 ```bash
 cd /opt/AIGateway
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v0.2.2 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.1 .
 mkdir -p /opt/AIGateway/data
 docker run -d --name helidata-ai-gateway \
   -p 18080:80 -v /opt/AIGateway/data:/data:Z \
-  --restart unless-stopped helidata-ai-gateway:v0.2.2
+  --restart unless-stopped helidata-ai-gateway:v1.0.1
 curl -fsS http://127.0.0.1:18080/health
 ```
 

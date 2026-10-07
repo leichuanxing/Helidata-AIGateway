@@ -1,6 +1,6 @@
 {
   "name": "helidata-ai-gateway",
-  "version": "0.2.2",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {"dev": "vite --host", "build": "vue-tsc --noEmit && vite build"},
