@@ -76,6 +76,16 @@ class SettingsAssetsTest(unittest.IsolatedAsyncioTestCase):
                         invalid=await client.patch('/api/admin/settings',json={'revision':stored['revision'],'basic':{'logo':b['basic']['logo']}})
                         self.assertEqual(invalid.status_code,422)
                         self.assertEqual((await client.get('/api/public/settings/assets/password')).status_code,422)
+                        # Verify the production middleware does not overwrite asset
+                        # caching while all configuration responses stay no-store.
+                        from app.main import app as production_app
+                        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=production_app),base_url='http://acceptance') as production:
+                            info=await production.get('/api/public/settings')
+                            self.assertEqual(info.headers['cache-control'],'no-store')
+                            if stored['basic']['logo']:
+                                image=await production.get(operations.asset_url('logo',operations.revision))
+                                self.assertEqual(image.status_code,200)
+                                self.assertIn('max-age=86400',image.headers['cache-control'])
                         print(f'PASS compact response: {len(legacy.content)} -> {len(compact.content)} bytes; public {len(public.content)} bytes; cached PNG bytes unchanged; authenticated saves preserve assets')
                 await transaction.rollback()
         finally:await engine.dispose()

@@ -101,7 +101,9 @@ async def request_context(request: Request,call_next):
             ctx.payload={'stream':getattr(request.state,'safe_stream',False)}
             ctx.response_status=response.status_code;ctx.stages=['request_validation','call_log']
             await call_log.write(ctx,'failure',getattr(request.state,'failure_code','INTERNAL_ERROR'))
-        if request.url.path.startswith(('/api/','/v1/')):
+        public_brand_asset=(request.method in ('GET','HEAD') and response.status_code in (200,304)
+            and request.url.path in ('/api/public/settings/assets/logo','/api/public/settings/assets/icon'))
+        if request.url.path.startswith(('/api/','/v1/')) and not public_brand_asset:
             response.headers['Cache-Control']='no-store'
         logging.getLogger('app.requests').info('method=%s status=%s',request.method,response.status_code)
         return response
