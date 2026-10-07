@@ -73,6 +73,8 @@ Vue3 / TypeScript / Element Plus / ECharts前端通过Nginx访问FastAPI。单�
 | pic/ | README 引用的应用界面截图 |
 | start.sh / stop.sh | 宿主机启动与正常停止脚本 |
 | scripts/ | 启停脚本共用的 Docker 检查与健康等待逻辑 |
+| offline/ | 交互式离线安装、离线启停脚本、镜像与部署包导出工具 |
+| releases/ | 本地生成的离线部署包、独立镜像与 SHA256 校验文件 |
 
 ## 系统要求、Docker构建与运行
 
@@ -88,7 +90,58 @@ curl -fsS http://127.0.0.1:18080/health
 
 当前服务器80端口由OpenResty使用，网关使用18080。SELinux保留`:Z`。生产访问建议使用可信HTTPS代理，来源和转发头配置一致后启用Secure Cookie。不要映射5432/6379。
 
-## 启动与停止
+## 离线部署（推荐用于离线服务器）
+
+当前提供 **v1.0.1 / Linux amd64（x86_64）** 离线部署包。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 和 util-linux；Docker 安装器不包含在包内。镜像已包含应用、PostgreSQL/pgvector、Redis、Nginx 和本地审核模型，安装时无需下载依赖。
+
+| 文件 | 用途 |
+| --- | --- |
+| [完整离线部署包](releases/helidata-ai-gateway-v1.0.1-linux-amd64-offline.tar.gz) | 约 395 MiB，包含镜像、交互式安装、启停脚本与部署说明 |
+| [独立 Docker 镜像](releases/helidata-ai-gateway-v1.0.1-image.tar.gz) | 约 398 MiB，可通过 `docker load` 导入；完整部署包已包含该镜像，无需重复下载 |
+| [SHA256 校验文件](releases/helidata-ai-gateway-v1.0.1-linux-amd64-SHA256SUMS) | 校验完整部署包和独立镜像文件 |
+
+这些文件由构建工具生成，保存在本地 `releases/` 目录，不随源码 Git 提交发布。复制完整部署包到目标服务器后执行：
+
+```bash
+tar -xzf helidata-ai-gateway-v1.0.1-linux-amd64-offline.tar.gz
+cd helidata-ai-gateway-v1.0.1-linux-amd64
+sudo ./deploy-offline.sh
+```
+
+安装脚本依次引导填写：
+
+| 参数 | 默认值或要求 |
+| --- | --- |
+| 宿主机数据目录 | `/opt/AIGateway/data`，必须为新的空目录 |
+| 管理员用户名 | `admin`，3 至 80 位字母、数字、下划线、点或短横线 |
+| 管理员密码 | 12 至 128 位，包含大小写字母、数字、符号中的至少三类；输入隐藏 |
+| 确认管理员密码 | 与第一次输入一致 |
+| 应用端口 | `18080`，映射容器内的 80 端口 |
+
+完成输入后，脚本校验包内文件、导入并核对镜像、创建容器并等待健康检查。启动成功后输出 `http://服务器IP:端口/login`、管理员用户名和密码使用说明；密码不回显。多网卡服务器请使用客户端能访问的实际 IP。
+
+首次管理员使用输入的密码，明文不写入部署配置、Docker 环境变量或启动日志；只通过标准输入生成 Argon2 哈希，初始化完成后删除临时哈希文件。已有同名容器或非空数据目录会拒绝覆盖，既有管理员不会重置。
+
+后续在解压目录中操作：
+
+```bash
+sudo ./start-offline.sh                    # 启动并等待就绪
+sudo ./stop-offline.sh                     # 停止并保留数据
+sudo ./stop-offline.sh && sudo ./start-offline.sh  # 重启
+```
+
+`deployment.env` 保存选择的容器名称、镜像、数据目录和端口，不包含管理员密码。离线镜像标签为 `helidata-ai-gateway:v1.0.1-offline`，启动使用 `--pull=never`。首次就绪等待默认 300 秒；如启动失败，保留容器及数据，排查后使用启动脚本重试。完整说明见[离线部署手册](offline/README.md)。配置外部模型供应商后，外部模型调用仍需要对应网络与 API Key。
+
+维护者导出新包前，先构建完整基础镜像 `helidata-ai-gateway:v1.0.1`，再执行：
+
+```bash
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.1-offline .
+python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
+```
+
+导出工具默认写入 `releases/`，已有同名文件时拒绝覆盖；可通过 `--output` 指定新的输出目录。包内 `manifest.json` 记录应用版本、迁移版本、源码提交、镜像 ID、架构和镜像校验值。
+
+## 启动与停止（源码部署）
 
 在服务器应用目录执行：
 
@@ -121,7 +174,7 @@ APP_PORT=18081 APP_DATA_DIR=/srv/aigateway/data ./stop.sh
 
 ## 初始化管理员与数据目录
 
-首次初始化生成`admin`及随机密码，启动日志仅首次输出`INITIAL ADMIN`；管理员在受保护的终端查看、登录并改密。现有账号不会重置。禁止将初始化日志、生产配置、Master Key或备份打入公开源码包。
+离线交互式安装使用部署时填写的管理员用户名和密码。源码构建直接启动时，首次初始化生成 `admin` 及随机密码，启动日志仅首次输出 `INITIAL ADMIN`；管理员在受保护的终端查看、登录并改密。两种方式均不会重置现有管理员。禁止将初始化日志、生产配置、Master Key 或备份打入公开源码包。
 
 `/data/postgres`保存业务库及迁移，`redis`保存Redis数据，`config/config.yaml`保存基础设施配置，`config/provider-encryption.key`是Provider凭据解密必需的Master Key，`uploads`保存文件，`logs`包含运行日志及调用/审核持久补偿，`backup/manual`保存手动备份。恢复时必须保留数据库对应的Master Key。
 
@@ -177,14 +230,3 @@ OpenAI兼容SDK的`base_url`设为GATEWAY_BASE，使用网关API Key。Responses
 
 
 智谱接入：模型供应商支持“智谱开放平台”和“智谱 Coding Plan”，选择类型自动填入对应Base URL。填写对应API Key和实际可用模型映射后保存；接入范围和模型发现限制见[系统状态](docs/current-status.md)。
-
-## 离线部署
-
-完整镜像及交互式部署包见 [离线部署说明](offline/README.md)。首次部署可指定数据目录、管理员账号和密码、应用端口。
-
-构建维护命令：
-
-```bash
-docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.1-offline .
-python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
-```
