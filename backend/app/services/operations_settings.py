@@ -1,6 +1,6 @@
 """Database-backed hot settings. Existing YAML secrets and assets are untouched."""
 from copy import deepcopy
-from sqlalchemy import select
+from sqlalchemy import select,text
 from app.models.user import SystemSetting
 from app.core.config import get_settings,Gateway,Security,Logging
 from app.schemas.settings import Basic,GatewayOptions,SecurityOptions,LogOptions,VectorOptions,GovernanceOptions,ElasticsearchOptions
@@ -12,7 +12,11 @@ governance=GovernanceOptions().model_dump()
 elasticsearch=ElasticsearchOptions().model_dump()
 
 
-async def document(db,private=False):
+def asset_url(kind,version):
+    return f'/api/public/settings/assets/{kind}?v={version}'
+
+
+async def document(db,private=False,include_assets=True):
     cfg=get_settings()
     defaults={'basic':Basic().model_dump(),
         'gateway':{k:getattr(cfg.gateway,k) for k in GatewayOptions.model_fields},
@@ -20,7 +24,14 @@ async def document(db,private=False):
         'logging':{k:getattr(cfg.logging,k) for k in LogOptions.model_fields},
         'vector':VectorOptions().model_dump(),'governance':GovernanceOptions().model_dump(),
         'elasticsearch':ElasticsearchOptions().model_dump(),'revision':0}
-    rows={r.key:r.value for r in (await db.scalars(select(SystemSetting).where(SystemSetting.key.in_(['operations','system_name','language','timezone'])))).all()}
+    if include_assets:
+        rows={r.key:r.value for r in (await db.scalars(select(SystemSetting).where(SystemSetting.key.in_(['operations','system_name','language','timezone'])))).all()}
+    else:
+        # Project references in PostgreSQL; base64 never crosses the connection.
+        expression='value'
+        for kind in ('logo','icon'):
+            expression=f"jsonb_set({expression},'{{basic,{kind}}}',to_jsonb(CASE WHEN coalesce(value->'basic'->>'{kind}','')<>'' THEN '/api/public/settings/assets/{kind}?v='||coalesce(value->>'revision','0') ELSE '' END))"
+        rows={r.key:r.value for r in (await db.execute(text(f"SELECT key,CASE WHEN key='operations' THEN {expression} ELSE value END AS value FROM system_settings WHERE key IN ('operations','system_name','language','timezone')"))).all()}
     for key in ('system_name','language','timezone'):
         if isinstance(rows.get(key),str):defaults['basic'][key]=rows[key]
     stored=rows.get('operations') or {}
@@ -52,7 +63,10 @@ def apply(value):
 
 
 def public():
-    return deepcopy(basic)
+    result=deepcopy(basic)
+    for kind in ('logo','icon'):
+        if result[kind]:result[kind]=asset_url(kind,revision)
+    return result
 
 
 async def load():

@@ -19,7 +19,7 @@ const Groups=()=>import('./views/Groups.vue')
 const ModelGroups=()=>import('./views/ModelGroups.vue')
 const SmartRoute=()=>import('./views/SmartRoute.vue')
 const Compliance=()=>import('./views/Compliance.vue')
-const Settings=()=>import('./views/Settings.vue')
+import {settingsPage as Settings} from './ui/settingsPage'
 const SystemOperations=()=>import('./views/SystemOperations.vue')
 const Providers=()=>import('./views/Providers.vue')
 const ProviderDetail=()=>import('./views/ProviderDetail.vue')

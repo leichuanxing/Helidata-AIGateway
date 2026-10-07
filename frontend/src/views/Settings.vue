@@ -19,7 +19,7 @@ const currentDirty=computed(()=>dirtyTabs.value.includes(tab.value))
 const pending=computed(()=>dirtyTabs.value.length>0||routeDirty.value)
 async function confirmDiscard(){try{await ElMessageBox.confirm('有尚未保存的更改，继续将放弃这些更改。','未保存更改',{confirmButtonText:'放弃更改',cancelButtonText:'继续编辑',type:'warning'});return true}catch{return false}}
 async function reload(){if(pending.value&&!await confirmDiscard())return;await load()}
-function resetCurrent(){const fields=settingsPayload(baseline.value,baseline.value.logging.redaction_rules.join('\n'),tab.value);for(const [section,values] of Object.entries(fields))for(const key of Object.keys(values))form[section][key]=copy(baseline.value[section][key]);if(tab.value==='basic')rules.value=baseline.value.logging.redaction_rules.join('\n')}
+function resetCurrent(){const fields=settingsPayload(baseline.value,baseline.value.logging.redaction_rules.join('\n'),tab.value);if(tab.value==='brand')fields.basic={...fields.basic,logo:baseline.value.basic.logo,icon:baseline.value.basic.icon};for(const [section,values] of Object.entries(fields))for(const key of Object.keys(values))form[section][key]=copy(baseline.value[section][key]);if(tab.value==='basic')rules.value=baseline.value.logging.redaction_rules.join('\n')}
 function beforeUnload(event:BeforeUnloadEvent){if(pending.value){event.preventDefault();event.returnValue=''}}
 onBeforeRouteLeave(async()=>saving.value||routeSaving.value?false:!pending.value||await confirmDiscard())
 const requests=new Set<AbortController>()
@@ -40,7 +40,7 @@ async function load(){
   for(const key of ['vector','smart','elasticsearch']){auxiliaryReady[key]=false;auxiliaryLoading[key]=false;auxiliaryError[key]=''}
   loading.value=true;error.value=''
   try{
-    const s=await api.get('/admin/settings',{signal:request.signal,timeout:15000})
+    const s=await api.get('/admin/settings',{params:{include_assets:false},signal:request.signal,timeout:15000})
     if(disposed||version!==generation)return
     Object.assign(form,s.data.data);baseline.value=copy(s.data.data);savedVector.value=copy(form.vector);rules.value=form.logging.redaction_rules.join('\n')
     routeBaseline.value=null;ready.value=true;vectorResult.value=null
@@ -79,7 +79,7 @@ async function save(){
   saving.value=true
   try{
     if(savingTab==='vector')await ElMessageBox.confirm('更换共享向量服务会使已有路由和审核样本向量失效。保存后需手动重建，重建可能产生用量和费用。','保存向量服务',{confirmButtonText:'保存',cancelButtonText:'取消'})
-    const saved=(await api.patch('/admin/settings',{revision:form.revision,...sent})).data.data
+    const saved=(await api.patch('/admin/settings',{revision:form.revision,...sent},{params:{include_assets:false}})).data.data
     acceptSaved(form,baseline.value,sent,saved)
     if(savingTab==='basic'&&rules.value===sentRules)rules.value=saved.logging.redaction_rules.join('\n')
     if(savingTab==='vector'){savedVector.value=copy(saved.vector);vectorResult.value=null}

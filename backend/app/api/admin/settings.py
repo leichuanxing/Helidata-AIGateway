@@ -1,4 +1,8 @@
-from fastapi import APIRouter,Depends,Request
+from fastapi import APIRouter,Depends,Request,Query
+from fastapi.responses import Response,RedirectResponse
+from typing import Literal
+from functools import lru_cache
+import base64,hashlib
 from sqlalchemy import select,update
 from app.core.database import get_session
 from app.core.dependencies import super_administrator
@@ -21,13 +25,31 @@ async def system_status(actor=Depends(super_administrator)):
 async def public():return {'data':operations.public()}
 
 
+@lru_cache(maxsize=2)
+def asset_bytes(encoded):
+    raw=base64.b64decode(encoded.split(',',1)[1])
+    return raw,'"'+hashlib.sha256(raw).hexdigest()+'"'
+
+
+@router.get('/api/public/settings/assets/{kind}')
+async def brand_asset(kind:Literal['logo','icon'],request:Request,v:int|None=Query(None,ge=0)):
+    encoded=operations.basic.get(kind)
+    if not encoded:raise APIError(404,'BRAND_ASSET_NOT_FOUND','未配置品牌图片')
+    if v is not None and v!=operations.revision:
+        return RedirectResponse(operations.asset_url(kind,operations.revision),headers={'Cache-Control':'no-store'})
+    raw,etag=asset_bytes(encoded)
+    headers={'Cache-Control':'public, max-age=86400','ETag':etag,'X-Content-Type-Options':'nosniff'}
+    if request.headers.get('if-none-match')==etag:return Response(status_code=304,headers=headers)
+    return Response(raw,media_type='image/png',headers=headers)
+
+
 @router.get('/api/admin/settings')
-async def read(actor=Depends(super_administrator),db=Depends(get_session)):
-    return {'data':await operations.document(db)}
+async def read(actor=Depends(super_administrator),db=Depends(get_session),include_assets:bool=True):
+    return {'data':await operations.document(db,include_assets=include_assets)}
 
 
 @router.patch('/api/admin/settings')
-async def save(body:SettingsPatch,request:Request,actor=Depends(super_administrator),db=Depends(get_session)):
+async def save(body:SettingsPatch,request:Request,actor=Depends(super_administrator),db=Depends(get_session),include_assets:bool=True):
     from app.api.admin.model_mappings import config_lock
     await config_lock(db)
     row=await db.scalar(select(SystemSetting).where(SystemSetting.key=='operations').with_for_update())
@@ -76,7 +98,7 @@ async def save(body:SettingsPatch,request:Request,actor=Depends(super_administra
     audit(db,actor.id,'update_system_settings','operations',request.client.host,resource_type='system_settings')
     await db.commit()
     operations.apply(current)
-    return {'data':await operations.document(db)}
+    return {'data':await operations.document(db,include_assets=include_assets)}
 
 
 @router.get('/api/admin/settings/vector-options')

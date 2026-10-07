@@ -3,7 +3,7 @@ export const copy=<T>(value:T):T=>value===undefined?value:JSON.parse(JSON.string
 export const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
 export function settingsPayload(form:any,rules:string,tab:string):Record<string,any>{
   switch(tab){
-    case 'brand':return {basic:Object.fromEntries(['system_name','logo','icon','system_url','language','timezone'].map(key=>[key,form.basic[key]]))}
+    case 'brand':return {basic:Object.fromEntries(['system_name','logo','icon','system_url','language','timezone'].filter(key=>!['logo','icon'].includes(key)||!/^\/api\/public\/settings\/assets\/(logo|icon)\?v=\d+$/.test(form.basic[key])).map(key=>[key,form.basic[key]]))}
     case 'basic':return {basic:{public_api_base_url:form.basic.public_api_base_url},logging:{...form.logging,redaction_rules:rules.split('\n').map(x=>x.trim()).filter(Boolean)},gateway:{protocol_conversion:form.gateway.protocol_conversion}}
     case 'performance':return {gateway:Object.fromEntries(Object.entries(form.gateway).filter(([key])=>key!=='protocol_conversion'))}
     case 'vector':return {vector:{...form.vector}}
