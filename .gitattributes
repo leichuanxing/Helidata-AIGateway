@@ -3,3 +3,6 @@
 /scripts/application.sh text eol=lf
 
 /offline/*.sh text eol=lf
+
+# Linux entrypoints must retain LF in source archives.
+*.sh text eol=lf
