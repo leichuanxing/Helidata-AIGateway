@@ -94,7 +94,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
 </script>
 <template>
  <div class="compliance-page">
-  <PageHeader title="内容合规" description="维护敏感词、语义审核样本与策略组，查看请求审核结果及命中证据。"/>
+  <PageHeader title="内容合规"/>
   <el-alert v-if="error" :title="error" type="error" :closable="false" class="gap"/>
   <div class="panel">
    <el-tabs :model-value="view" @tab-change="(name:any)=>router.push('/admin/compliance/'+name)">

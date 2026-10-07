@@ -56,7 +56,7 @@ function image(event:Event,key:'logo'|'icon'){const file=(event.target as HTMLIn
 onMounted(async()=>{window.addEventListener('beforeunload',beforeUnload);await load()})
 </script>
 <template>
-<PageHeader title="系统设置" description="统一配置网关接入、运行性能、向量服务与治理能力。"><el-button v-if="tab!=='status'" :disabled="saving||routeSaving||testLoading" :loading="loading" @click="reload">重新加载</el-button></PageHeader>
+<PageHeader title="系统设置"><el-button v-if="tab!=='status'" :disabled="saving||routeSaving||testLoading" :loading="loading" @click="reload">重新加载</el-button></PageHeader>
 <el-alert v-if="error" :title="error" type="error" :closable="false"/>
 <section v-if="ready" class="panel settings-panel" v-loading="loading"><el-tabs v-model="tab" :before-leave="()=>!saving&&!routeSaving">
 <el-tab-pane label="基础与品牌" name="brand"><el-form label-position="top"><el-form-item label="系统名称"><el-input v-model="form.basic.system_name" maxlength="80"/></el-form-item><div class="settings-grid"><el-form-item v-for="key in (['logo','icon'] as const)" :key="key" :label="key==='logo'?'系统Logo':'浏览器Icon'"><img v-if="form.basic[key]" :src="form.basic[key]" class="brand-preview"/><input type="file" accept="image/png" @change="image($event,key)"/><el-button text @click="form.basic[key]=''">清除</el-button></el-form-item></div><el-form-item label="系统URL"><el-input v-model="form.basic.system_url" placeholder="留空使用当前网站地址"/></el-form-item><el-form-item label="语言"><el-select v-model="form.basic.language"><el-option label="简体中文" value="zh-CN"/></el-select></el-form-item><el-form-item label="显示时区"><el-input v-model="form.basic.timezone" placeholder="Asia/Shanghai、UTC或有效IANA时区"/></el-form-item><p class="muted">显示时间使用此时区；Token配额周期与统计分桶仍按北京时间计算。</p></el-form></el-tab-pane>

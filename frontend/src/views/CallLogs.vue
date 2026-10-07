@@ -26,7 +26,7 @@ function reset(){for(const k of fields)form[k]='';range.value=null;return search
 function failed(){form.status='failed';return search()}
 watch(()=>route.fullPath,load,{immediate:true})
 </script>
-<template><div><PageHeader title="调用日志" description="按 Request ID 还原请求链路。默认查询最近 7 天；自选时间范围最多 31 天。"/>
+<template><div><PageHeader title="调用日志"/>
 <el-alert v-if="error" :title="error" type="error" :closable="false"/>
 <div class="panel"><div class="log-filters">
 <el-input v-model="form.request_id" placeholder="Request ID（精确匹配）" clearable aria-label="Request ID" @keyup.enter="search()"/>

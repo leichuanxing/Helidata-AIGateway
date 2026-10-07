@@ -72,9 +72,8 @@ const timer=setInterval(()=>{if(view.value==='samples'&&!saving.value&&!loading.
 onUnmounted(()=>{clearInterval(timer);generation++})
 </script>
 <template><div>
-<PageHeader title="智能路由" description="根据请求内容选择模型，管理分类样本、查看决策依据与用量分布。"/>
+<PageHeader title="智能路由"/>
 <nav class="route-nav" aria-label="智能路由模块"><router-link to="/admin/smart-route/samples">样本管理</router-link><router-link to="/admin/smart-route/logs">决策日志</router-link><router-link to="/admin/smart-route/statistics">统计</router-link><router-link to="/admin/smart-route/configs">路由规则</router-link></nav>
-<el-alert v-if="!loading&&!configs.length" title="请先配置路由规则：选择向量模型及简单、复杂任务模型组，再添加并构建样本。" type="info" :closable="false" style="margin-bottom:16px"><el-button type="primary" link @click="router.push('/admin/smart-route/configs')">配置路由规则</el-button></el-alert>
 <el-alert v-if="error" :title="error" type="error" :closable="false"/>
 <div class="panel">
 <div class="toolbar">
