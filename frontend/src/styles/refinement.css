@@ -132,6 +132,5 @@ button,a,input,textarea{touch-action:manipulation}
 .reference-shell .brand-fallback{font-size:14px;font-weight:700;letter-spacing:.5px}
 .reference-shell .brand-copy{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;flex:1}
 .reference-shell .brand-copy strong{display:block;font-size:15px;font-weight:650;line-height:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.reference-shell .brand-copy small{font-size:10px;font-weight:500;line-height:14px;letter-spacing:1px;color:var(--muted)}
 .reference-shell.collapsed .sidebar .brand{gap:0;justify-content:center}
 @media(max-width:760px){.reference-shell .sidebar .brand{gap:0;justify-content:center}.reference-shell .brand-copy{display:none}}
