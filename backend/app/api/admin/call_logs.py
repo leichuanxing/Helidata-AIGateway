@@ -19,6 +19,7 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),
     page:int=Query(1,ge=1,le=10000),page_size:int=Query(20,ge=1,le=100),
     request_id:str=Query('',max_length=80),user_id:int|None=Query(None,ge=1),user_group_id:int|None=Query(None,ge=1),
     api_key_id:int|None=Query(None,ge=1),provider_id:int|None=Query(None,ge=1),model:str=Query('',max_length=100),
+    model_scope:Literal['either','request','actual']='either',request_model:str=Query('',max_length=100),logical_model:str=Query('',max_length=100),
     status:Literal['','success','failure','client_cancelled','failed']='',http_status:int|None=Query(None,ge=100,le=599),
     protocol:str=Query('',max_length=30),error_code:str=Query('',max_length=80),operation:Literal['','chat','responses','messages','embeddings','rerank','images','models','preflight']='',
     start:datetime|None=None,end:datetime|None=None):
@@ -32,9 +33,9 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),
             raise APIError(422,'LOG_TIME_RANGE_INVALID','查询时间范围应大于0且不超过31天')
         query=query.where(CallLog.created_at>=start,CallLog.created_at<end)
     for name,value in [('request_id',request_id),('user_id',user_id),('user_group_id',user_group_id),
-        ('api_key_id',api_key_id),('provider_id',provider_id),('http_status',http_status),('error_code',error_code),('operation',operation),('protocol',protocol)]:
+        ('api_key_id',api_key_id),('provider_id',provider_id),('http_status',http_status),('error_code',error_code),('operation',operation),('protocol',protocol),('request_model',request_model),('logical_model',logical_model)]:
         if value is not None and value!='':query=query.where(getattr(CallLog,name)==value)
-    if model:query=query.where(or_(CallLog.request_model==model,CallLog.logical_model==model))
+    if model:query=query.where(CallLog.request_model==model if model_scope=='request' else CallLog.logical_model==model if model_scope=='actual' else or_(CallLog.request_model==model,CallLog.logical_model==model))
     if status:query=query.where(CallLog.status.in_(['failure','client_cancelled']) if status=='failed' else CallLog.status==status)
     total=await db.scalar(select(func.count()).select_from(query.subquery()))
     rows=(await db.scalars(query.order_by(CallLog.created_at.desc(),CallLog.id.desc()).offset((page-1)*page_size).limit(page_size))).all()

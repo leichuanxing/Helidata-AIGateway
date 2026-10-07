@@ -4,7 +4,7 @@ import {reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {api,message} from '../api/client'
 const route=useRoute(),router=useRouter(),rows=ref<any[]>([]),total=ref(0),loading=ref(false),error=ref(''),page=ref(1)
-const fields=['request_id','user_id','user_group_id','api_key_id','provider_id','model','status','http_status','error_code','operation','protocol'] as const
+const fields=['request_id','user_id','user_group_id','api_key_id','provider_id','model','model_scope','request_model','logical_model','status','http_status','error_code','operation','protocol'] as const
 const form=reactive<Record<string,string>>(Object.fromEntries(fields.map(k=>[k,''])))
 const advanced=ref(false)
 const range=ref<[Date,Date]|null>(null)
@@ -15,7 +15,7 @@ async function load(){
   const mine=++generation;loading.value=true;error.value=''
   for(const key of fields)form[key]=typeof route.query[key]==='string'?String(route.query[key]):''
   page.value=Number(route.query.page)||1
-  if(['protocol','operation','user_id','user_group_id','api_key_id','provider_id','http_status','error_code'].some(k=>route.query[k]))advanced.value=true
+  if(['request_model','logical_model','protocol','operation','user_id','user_group_id','api_key_id','provider_id','http_status','error_code'].some(k=>route.query[k]))advanced.value=true
   const start=typeof route.query.start==='string'?new Date(route.query.start):null,end=typeof route.query.end==='string'?new Date(route.query.end):null
   range.value=start&&end&&!isNaN(start.getTime())&&!isNaN(end.getTime())?[start,end]:null
   try{const d=(await api.get('/admin/call-logs',{params:route.query})).data.data;if(mine===generation){rows.value=d.items;total.value=d.total}}
@@ -31,7 +31,7 @@ watch(()=>route.fullPath,load,{immediate:true})
 <div class="panel"><div class="log-filters">
 <el-input v-model="form.request_id" placeholder="Request ID（精确匹配）" clearable aria-label="Request ID" @keyup.enter="search()"/>
 <el-input v-if="advanced" v-model="form.protocol" placeholder="协议" clearable aria-label="协议"/><el-input v-model="form.model" placeholder="请求或最终逻辑模型" clearable aria-label="模型"/>
-<el-select v-model="form.status" placeholder="全部状态" clearable aria-label="状态"><el-option label="成功" value="success"/><el-option label="失败" value="failure"/><el-option label="客户端取消" value="client_cancelled"/><el-option label="失败与取消" value="failed"/></el-select>
+<el-input v-if="advanced" v-model="form.request_model" placeholder="请求模型（精确匹配）" clearable aria-label="请求模型"/><el-input v-if="advanced" v-model="form.logical_model" placeholder="实际模型（精确匹配）" clearable aria-label="实际模型"/><el-select v-if="advanced||form.model_scope" v-model="form.model_scope" placeholder="请求或实际模型" clearable aria-label="模型匹配范围"><el-option label="请求或实际模型" value="either"/><el-option label="仅请求模型" value="request"/><el-option label="仅实际模型" value="actual"/></el-select><el-select v-model="form.status" placeholder="全部状态" clearable aria-label="状态"><el-option label="成功" value="success"/><el-option label="失败" value="failure"/><el-option label="客户端取消" value="client_cancelled"/><el-option label="失败与取消" value="failed"/></el-select>
 <el-select v-if="advanced" v-model="form.operation" placeholder="全部操作" clearable aria-label="操作"><el-option v-for="op in ['chat','responses','messages','embeddings','rerank','images']" :key="op" :label="operations[op]" :value="op"/><el-option label="模型目录" value="models"/><el-option label="预检" value="preflight"/></el-select>
 <el-input v-if="advanced" v-model="form.user_id" placeholder="用户 ID" clearable aria-label="用户 ID"/><el-input v-if="advanced" v-model="form.user_group_id" placeholder="用户组 ID" clearable aria-label="用户组 ID"/><el-input v-if="advanced" v-model="form.api_key_id" placeholder="API Key ID" clearable aria-label="API Key ID"/><el-input v-if="advanced" v-model="form.provider_id" placeholder="Provider ID" clearable aria-label="Provider ID"/>
 <el-input v-if="advanced" v-model="form.http_status" placeholder="HTTP 状态，如 429" clearable aria-label="HTTP 状态"/><el-input v-if="advanced" v-model="form.error_code" placeholder="错误码（精确匹配）" clearable aria-label="错误码"/>

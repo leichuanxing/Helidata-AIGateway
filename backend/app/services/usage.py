@@ -1,11 +1,13 @@
 """Atomic aggregates. Exact partial-hour edges read only bounded indexed logs."""
 from datetime import timezone,timedelta
-from sqlalchemy import text
+from sqlalchemy import text,select
+from app.core.exceptions import APIError
 
 DIMS=('user_id','user_group_id','api_key_id','provider_id','request_model','logical_model','protocol','operation')
 TOKENS=('input_tokens','output_tokens','cached_tokens','total_tokens')
 COUNTERS=('requests','success','failure','usage_unavailable')+tuple(x+y for x in TOKENS for y in ('_sum','_count'))+('ttft_sum','ttft_count','tps_sum','tps_count')
 ZONE=timezone(timedelta(hours=8))
+BREAKDOWN_DIMS=('request_model','logical_model','provider_id','user_id','user_group_id','api_key_id','protocol','operation')
 
 
 def contribution(record):
@@ -59,20 +61,57 @@ def source_query(start,end,grain,filters):
     return cte,params
 
 
-async def statistics(db,start,end,grain,filters):
+def public_metrics(row):
+    result={k:int(row[k]) for k in ('requests','success','failure','usage_unavailable','active_users')}
+    result['failure_rate']=round(result['failure']/result['requests']*100,3) if result['requests'] else 0
+    result['success_rate']=round(result['success']/result['requests']*100,3) if result['requests'] else 0
+    result['token_coverage']=round((result['requests']-result['usage_unavailable'])/result['requests']*100,3) if result['requests'] else None
+    for k in TOKENS:
+        count=int(row[k+'_count']);result[k]=int(row[k+'_sum']) if count or not result['requests'] else None;result[k+'_samples']=count
+    for prefix,out in [('ttft','average_ttft_ms'),('tps','average_tokens_per_second')]:
+        count=int(row[prefix+'_count']);result[out]=round(float(row[prefix+'_sum'])/count,3) if count else None;result[prefix+'_samples']=count
+    return result
+
+
+async def statistics(db,start,end,grain,filters,dimension=None):
+    if dimension is not None and dimension not in BREAKDOWN_DIMS:
+        raise APIError(422,'USAGE_DIMENSION_INVALID','不支持的统计维度')
     cte,params=source_query(start,end,grain,filters)
     time=f"date_trunc('{grain}',bucket AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'"
     # One statement snapshot yields internally consistent totals and timeline.
-    query=cte+f"SELECT {time} AS bucket,grouping({time}) AS is_summary,count(distinct nullif(user_id,0)) AS active_users,"+','.join(f'coalesce(sum({k}),0) AS {k}' for k in COUNTERS)+f' FROM filtered GROUP BY GROUPING SETS ((),({time})) ORDER BY bucket NULLS FIRST'
+    dim_fields=f',CAST({dimension} AS text) AS dimension_value,grouping({dimension}) AS dimension_total' if dimension else ''
+    sets=f'(),({time})'+(f',({dimension})' if dimension else '')
+    aggregate=f"SELECT {time} AS bucket,grouping({time}) AS is_summary{dim_fields},count(distinct nullif(user_id,0)) AS active_users,"+','.join(f'coalesce(sum({k}),0) AS {k}' for k in COUNTERS)+f' FROM filtered GROUP BY GROUPING SETS ({sets})'
+    if dimension:
+        query=cte+', totals AS ('+aggregate+'), ranked AS (SELECT *,row_number() OVER (PARTITION BY is_summary,dimension_total ORDER BY total_tokens_sum DESC,requests DESC,dimension_value) AS rank,count(*) OVER (PARTITION BY is_summary,dimension_total) AS dimension_count FROM totals) SELECT * FROM ranked WHERE is_summary=0 OR dimension_total=1 OR rank<=200 ORDER BY bucket NULLS FIRST,rank'
+    else:query=cte+aggregate+' ORDER BY bucket NULLS FIRST'
     rows=(await db.execute(text(query),params)).mappings().all()
-    def public(row):
-        result={k:int(row[k]) for k in ('requests','success','failure','usage_unavailable','active_users')}
-        result['failure_rate']=round(result['failure']/result['requests']*100,3) if result['requests'] else 0
-        for k in TOKENS:
-            count=int(row[k+'_count']);result[k]=int(row[k+'_sum']) if count or not result['requests'] else None;result[k+'_samples']=count
-        for prefix,out in [('ttft','average_ttft_ms'),('tps','average_tokens_per_second')]:
-            count=int(row[prefix+'_count']);result[out]=round(float(row[prefix+'_sum'])/count,3) if count else None;result[prefix+'_samples']=count
-        return result
-    summary=next(public(r) for r in rows if r['is_summary'])
-    return {'summary':summary,'series':[{'bucket':r['bucket'],**public(r)} for r in rows if not r['is_summary']],
+    summary=next(public_metrics(r) for r in rows if r['is_summary'] and (not dimension or r['dimension_total']))
+    timeline={r['bucket']:public_metrics(r) for r in rows if not r['is_summary']}
+    step=timedelta(hours=1) if grain=='hour' else timedelta(days=1)
+    bucket=start.astimezone(ZONE).replace(minute=0,second=0,microsecond=0)
+    if grain=='day':bucket=bucket.replace(hour=0)
+    zero=public_metrics({**dict.fromkeys(COUNTERS,0),'active_users':0})
+    series=[]
+    while bucket<end:
+        series.append({'bucket':bucket,**timeline.get(bucket,zero)});bucket+=step
+    breakdown=[{'value':r['dimension_value'],**public_metrics(r)} for r in rows if dimension and r['is_summary'] and not r['dimension_total']]
+    total_dimensions=next((int(r['dimension_count']) for r in rows if dimension and r['is_summary'] and not r['dimension_total']),0)
+    if dimension:await label_dimensions(db,dimension,breakdown)
+    for r in breakdown:
+        r['request_share']=round(r['requests']/summary['requests']*100,3) if summary['requests'] else 0
+        r['token_share']=round(r['total_tokens']/summary['total_tokens']*100,3) if r['total_tokens'] is not None and summary['total_tokens'] else None
+    return {'summary':summary,'series':series,'breakdown':breakdown,'dimension':dimension,'dimension_count':total_dimensions,'breakdown_limit':200,
         'start':start,'end':end,'timezone':'Asia/Shanghai','grain':grain,'operation':filters.get('operation') or 'all_inference','storage':('daily_hourly_with_exact_boundary_logs' if grain=='day' else 'hourly_with_exact_boundary_logs')}
+
+
+async def label_dimensions(db,dimension,rows):
+    from app.models.user import User,UserGroup,ApiKey,Provider
+    tables={'user_id':(User,User.username,'未认证 / 系统请求'),'user_group_id':(UserGroup,UserGroup.name,'未分配用户组'),
+            'api_key_id':(ApiKey,ApiKey.name,'未使用 API Key'),'provider_id':(Provider,Provider.name,'未选择账号')}
+    if dimension in tables:
+        model,column,empty=tables[dimension];ids=[int(r['value']) for r in rows if r['value'] and r['value']!='0']
+        names=dict((await db.execute(select(model.id,column).where(model.id.in_(ids)))).all()) if ids else {}
+        for r in rows:r['label']=empty if r['value']=='0' else names.get(int(r['value']),f'历史记录 #{r["value"]}')
+    else:
+        for r in rows:r['label']=r['value'] or '未选择模型 / 协议'
