@@ -24,3 +24,11 @@ api.interceptors.response.use(r=>r,async error=>{
 })
 export function message(error:any){return error.response?.data?.error?.message||'请求失败，请稍后重试'}
 
+
+// Fetch is required for incremental SSE; keep the same in-memory session lifecycle.
+export async function sessionFetch(url:string,init:RequestInit){
+ const send=()=>{const headers=new Headers(init.headers);if(access)headers.set('Authorization','Bearer '+access);return fetch(url,{...init,headers,credentials:'same-origin'})}
+ let response=await send()
+ if(response.status===401&&!init.signal?.aborted){await renew();response=await send()}
+ return response
+}

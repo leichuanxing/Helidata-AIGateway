@@ -34,6 +34,9 @@ def require_model_group(principal,model_group_id):
 
 
 async def record_key_use(db,principal):
+    if principal.key is None:
+        await db.commit()  # Web chat still releases the transaction before upstream I/O.
+        return
     instant=now()
     # Preserve durable last use with <=1s granularity, without a hot-row write per call.
     await db.execute(update(ApiKey).where(ApiKey.id==principal.key.id,

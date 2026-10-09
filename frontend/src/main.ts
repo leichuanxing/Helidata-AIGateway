@@ -28,6 +28,7 @@ const Profile=()=>import('./views/Profile.vue')
 const UserDetail=()=>import('./views/UserDetail.vue')
 const Portal=()=>import('./views/Portal.vue')
 const Dashboard=()=>import('./views/Dashboard.vue')
+const ChatTest=()=>import('./views/ChatTest.vue')
 const Usage=()=>import('./views/Usage.vue')
 const CallLogs=()=>import('./views/CallLogs.vue')
 const CallLogDetail=()=>import('./views/CallLogDetail.vue')
@@ -38,6 +39,7 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/login',component:Login},
   {path:'/first-password',component:Password},
   {path:'/admin/dashboard',component:Dashboard,meta:{admin:true}},
+  {path:'/admin/chat-test',component:ChatTest,meta:{admin:true}},
   {path:'/admin/settings',component:Settings,meta:{superAdmin:true}},
   {path:'/admin/backups',component:SystemOperations,meta:{superAdmin:true}},
   {path:'/admin/audit-logs',component:SystemOperations,meta:{admin:true}},

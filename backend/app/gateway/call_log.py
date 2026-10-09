@@ -27,7 +27,7 @@ def snapshot(ctx,outcome,code):
     perf=performance(ctx)
     return {'request_id':ctx.request_id,'created_at':ctx.received_at,'operation':ctx.operation,
         'user_id':attr(ctx.user,'id'),'user_group_id':attr(ctx.group,'id'),'api_key_id':attr(ctx.key,'id'),
-        'username_snapshot':attr(ctx.user,'username'),'group_name_snapshot':attr(ctx.group,'name'),'key_name_snapshot':attr(ctx.key,'name'),
+        'username_snapshot':attr(ctx.user,'username'),'group_name_snapshot':attr(ctx.group,'name'),'key_name_snapshot':attr(ctx.key,'name','对话测试' if getattr(getattr(ctx.request,'state',None),'web_chat',False) else None),
         'client_ip':ctx.client_ip[:64],'protocol':attr(provider,'protocol','openai' if ctx.operation=='chat' else None),
         'request_model':ctx.original_model or ctx.logical_model,'logical_model':attr(mapping,'logical_model'),
         'upstream_model':attr(mapping,'upstream_model'),'provider_id':attr(provider,'id'),'provider_name_snapshot':attr(provider,'name'),
@@ -39,7 +39,7 @@ def snapshot(ctx,outcome,code):
         'request_body':getattr(ctx,'request_preview',None) if ctx.key and get_settings().logging.save_request_body else None,
         'response_body':getattr(ctx,'response_preview',None) if ctx.key and get_settings().logging.save_response_body else None,
         'trace':{**{k:v for k,v in perf.items() if k not in ('ttft_ms','tokens_per_second')},'stages':list(ctx.stages),'attempts':list(ctx.attempts),'model_groups':list(ctx.authorized_groups),
-            'authentication':'authenticated' if ctx.key else 'not_authenticated','stream_chunks':ctx.stream_chunks,
+            'authentication':'authenticated' if ctx.key else 'web_session' if getattr(getattr(ctx.request,'state',None),'web_chat',False) and ctx.user else 'not_authenticated','stream_chunks':ctx.stream_chunks,
             'queue_wait_ms':round(attr(ctx.admission,'waited',0)*1000,2),
             'parent_request_id':getattr(getattr(ctx.request,'state',None),'parent_request_id',None),
             'smart_routing':ctx.deferred.get('smart_routing','not_reached'),

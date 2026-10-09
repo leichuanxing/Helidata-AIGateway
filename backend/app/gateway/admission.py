@@ -107,7 +107,7 @@ class Admission:
                     seen.add(provider.id)
                     limit=1 if provider.cooldown_until and provider.cooldown_until<=now() else provider.max_concurrency
                     providers.append({'id':provider.id,'key':provider_key(provider.id),'limit':limit})
-                slots=['gateway:concurrency',f'group:{self.ctx.group.id}:concurrency',f'apikey:{self.ctx.key.id}:concurrency']
+                slots=['gateway:concurrency',f'group:{self.ctx.group.id}:concurrency',f'apikey:{self.ctx.key.id}:concurrency' if self.ctx.key else f'webchat:{self.ctx.user.id}:concurrency']
                 from app.services.group_access import concurrency_limits
                 group_limit,key_limit=concurrency_limits(self.ctx.group,cfg.max_concurrency)
                 result=await redis_client.eval(ADMIT,7,*slots,QUEUE,QUEUE_LEASES,'gateway:queue:seq',STREAMS,self.token,

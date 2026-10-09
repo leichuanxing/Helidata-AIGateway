@@ -5,6 +5,18 @@ from app.models.user import ApiKey, User, UserGroup
 
 
 async def authenticate(request, db):
+    # Only this exact, authenticated admin endpoint accepts a web session.
+    # Revalidate the session again during queued admission, never trust a client flag.
+    if request.url.path == '/api/admin/chat-test/completions':
+        from app.core.dependencies import current_user, active_user, administrator
+        from app.services.group_access import resolve_group
+        user = await current_user(request, db)
+        await active_user(user)
+        await administrator(user)
+        group = await resolve_group(db, user.user_group_id)
+        request.state.web_chat = True
+        return None, user, group
+
     scheme, _, raw = request.headers.get('Authorization', '').partition(' ')
     if request.url.path=='/v1/messages':
         alternate=request.headers.get('x-api-key','')

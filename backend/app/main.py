@@ -92,7 +92,7 @@ async def request_context(request: Request,call_next):
             # Consume unexpected application errors here so Uvicorn never logs raw exceptions.
             response=await unexpected(request,error)
         response.headers['X-Request-ID']=request.state.request_id
-        fallback_operation={('/v1/chat/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.url.path,request.method))
+        fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.url.path,request.method))
         if fallback_operation and not hasattr(request.state,'gateway_context'):
             # Schema/body failures occur before Pipeline creation. Persist only safe metadata.
             ctx=GatewayContext(request.state.request_id,fallback_operation,getattr(request.state,'safe_model',None))
@@ -199,3 +199,6 @@ app.include_router(runtime_router)
 
 from app.api.admin.settings import router as settings_router
 app.include_router(settings_router)
+
+from app.api.admin.chat_test import router as chat_test_router
+app.include_router(chat_test_router)

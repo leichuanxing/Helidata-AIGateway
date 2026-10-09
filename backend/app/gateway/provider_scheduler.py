@@ -20,7 +20,8 @@ RETRYABLE={'UPSTREAM_AUTH_FAILED','UPSTREAM_RATE_LIMITED','UPSTREAM_HTTP_ERROR',
     'UPSTREAM_NETWORK_ERROR','UPSTREAM_INVALID_RESPONSE','UPSTREAM_RESPONSE_TOO_LARGE','UPSTREAM_STREAM_INTERRUPTED'}
 
 def sticky_key(ctx):
-    return f'sticky:{ctx.key.id}:{hashlib.sha256(ctx.client_ip.encode()).hexdigest()[:24]}:{ctx.logical_model}'
+    identity = str(ctx.key.id) if ctx.key else f'webchat:{ctx.user.id}'
+    return f'sticky:{identity}:{hashlib.sha256(ctx.client_ip.encode()).hexdigest()[:24]}:{ctx.logical_model}'
 
 async def remember(ctx):
     try: await redis_client.set(sticky_key(ctx),str(ctx.provider.id),ex=get_settings().gateway.sticky_timeout)
