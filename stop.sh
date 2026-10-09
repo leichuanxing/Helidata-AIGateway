@@ -6,7 +6,7 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
   exit 0
 fi
 (( $# == 0 )) || fail '不接受位置参数，请使用 --help 查看配置方式。'
-check_environment
+check_environment stop
 if ! container_exists; then
   printf '应用容器不存在，无需停止：%s。\n' "$APP_CONTAINER_NAME"
   exit 0

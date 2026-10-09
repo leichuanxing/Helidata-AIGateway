@@ -1,5 +1,5 @@
 """Linux host script regressions using a fake Docker CLI; no real containers."""
-import json,os,subprocess,sys,tempfile,unittest
+import json,os,shutil,subprocess,sys,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 MOCK=r'''import json,os,sys
@@ -45,7 +45,7 @@ class ApplicationScriptsTest(unittest.TestCase):
   self.assertIn(['start','helidata-ai-gateway'],self.calls())
  def test_first_start_uses_local_image_and_preserves_spaces(self):
   r=self.run_script('start.sh',{'exists':False});self.assertEqual(r.returncode,0,r.stderr)
-  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.3');self.assertIn('unless-stopped',run)
+  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.3');self.assertIn('unless-stopped',run);self.assertIn('--pull=never',run)
  def test_missing_image_does_not_create_container(self):
   r=self.run_script('start.sh',{'exists':False,'image_available':False});self.assertNotEqual(r.returncode,0);self.assertFalse(self.data.exists());self.assertFalse(any(a[0]=='run' for a in self.calls()))
  def test_mount_and_port_mismatch_block_changes(self):
@@ -67,3 +67,27 @@ class ApplicationScriptsTest(unittest.TestCase):
  def test_paused_state_is_not_changed(self):
   for name in ('start.sh','stop.sh'):
    r=self.run_script(name,{'status':'paused'});self.assertNotEqual(r.returncode,0);self.assertFalse(any(a[0] in ('start','stop','run') for a in self.calls()))
+
+ def test_unrelated_timeout_does_not_block_operation(self):
+  self.assertEqual(self.run_script('stop.sh',APP_START_TIMEOUT='invalid').returncode,0)
+  self.assertEqual(self.run_script('start.sh',APP_STOP_TIMEOUT='invalid').returncode,0)
+ def test_unsafe_data_paths_are_rejected_before_docker(self):
+  for value in ('/tmp/data:bad','/tmp/data\nother','/tmp/data\rother'):
+   for name in ('start.sh','stop.sh'):
+    with self.subTest(value=value,name=name):
+     r=self.run_script(name,APP_DATA_DIR=value);self.assertNotEqual(r.returncode,0);self.assertEqual(json.loads(self.state.read_text()).get('calls',[]),[])
+ def test_data_file_is_rejected(self):
+  self.data.write_text('existing file')
+  r=self.run_script('start.sh');self.assertNotEqual(r.returncode,0);self.assertEqual(self.data.read_text(),'existing file')
+ def test_offline_wrappers_use_saved_configuration(self):
+  base=Path(self.temp.name)/'offline package';base.mkdir();(base/'scripts').mkdir()
+  for name in ('start.sh','stop.sh','scripts/application.sh'):
+   shutil.copyfile(ROOT/name,base/name)
+  for name in ('start-offline.sh','stop-offline.sh'):
+   shutil.copyfile(ROOT/'offline'/name,base/name)
+  (base/'deployment.env').write_text('export APP_CONTAINER_NAME=offline-fixture\nexport APP_IMAGE=helidata-ai-gateway:v1.0.3-offline\nexport APP_PORT=18092\nexport APP_DATA_DIR='+str(self.data).replace(' ','\\ ')+'\n')
+  for wrapper,status in (('start-offline.sh','exited'),('stop-offline.sh','running')):
+   self.state.write_text(json.dumps({'status':status,'port':'18092'}))
+   r=subprocess.run(['bash',str(base/wrapper)],env=self.env,cwd='/',capture_output=True,text=True,timeout=15)
+   self.assertEqual(r.returncode,0,r.stderr)
+   mutation=next(a for a in self.calls() if a[0] in ('start','stop'));self.assertEqual(mutation[-1],'offline-fixture')

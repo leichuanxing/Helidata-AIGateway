@@ -6,7 +6,7 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
   exit 0
 fi
 (( $# == 0 )) || fail '不接受位置参数，请使用 --help 查看配置方式。'
-check_environment
+check_environment start
 if container_exists; then
   check_container
   state="$(container_state)"
@@ -18,7 +18,7 @@ if container_exists; then
 else
   docker image inspect "$APP_IMAGE" >/dev/null 2>&1 || fail "本地镜像 $APP_IMAGE 不存在，请先按照 README 构建镜像。"
   mkdir -p -- "$APP_DATA_DIR"
-  docker run -d --name "$APP_CONTAINER_NAME" -p "$APP_PORT:80" \
+  docker run -d --pull=never --name "$APP_CONTAINER_NAME" -p "$APP_PORT:80" \
     -v "$APP_DATA_DIR:/data:Z" --restart unless-stopped "$APP_IMAGE" >/dev/null
 fi
 wait_ready

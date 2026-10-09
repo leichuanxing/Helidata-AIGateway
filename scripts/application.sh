@@ -10,14 +10,21 @@ APP_START_TIMEOUT="${APP_START_TIMEOUT:-180}"
 APP_STOP_TIMEOUT="${APP_STOP_TIMEOUT:-90}"
 fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
 check_environment() {
+  local operation="${1:-all}"
   command -v docker >/dev/null 2>&1 || fail '未安装 Docker，请先完成 README 中的部署准备。'
   command -v realpath >/dev/null 2>&1 || fail '缺少 realpath，请安装 coreutils。'
   [[ "$APP_CONTAINER_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail '容器名称格式无效。'
   [[ "$APP_PORT" =~ ^[1-9][0-9]{0,4}$ ]] && (( APP_PORT <= 65535 )) || fail '端口须为 1 至 65535。'
-  [[ "$APP_START_TIMEOUT" =~ ^[1-9][0-9]{0,3}$ ]] && (( APP_START_TIMEOUT <= 3600 )) || fail '启动超时须为 1 至 3600 秒。'
-  [[ "$APP_STOP_TIMEOUT" =~ ^[1-9][0-9]{0,3}$ ]] && (( APP_STOP_TIMEOUT <= 3600 )) || fail '停止超时须为 1 至 3600 秒。'
+  if [[ "$operation" != stop ]]; then
+    [[ "$APP_START_TIMEOUT" =~ ^[1-9][0-9]{0,3}$ ]] && (( APP_START_TIMEOUT <= 3600 )) || fail '启动超时须为 1 至 3600 秒。'
+  fi
+  if [[ "$operation" != start ]]; then
+    [[ "$APP_STOP_TIMEOUT" =~ ^[1-9][0-9]{0,3}$ ]] && (( APP_STOP_TIMEOUT <= 3600 )) || fail '停止超时须为 1 至 3600 秒。'
+  fi
+  [[ "$APP_DATA_DIR" != *:* && "$APP_DATA_DIR" != *$'\n'* && "$APP_DATA_DIR" != *$'\r'* ]] || fail '数据目录不能包含冒号或换行。'
   APP_DATA_DIR="$(realpath -m -- "$APP_DATA_DIR")"
   [[ "$APP_DATA_DIR" != / ]] || fail '数据目录不能为文件系统根目录。'
+  [[ ! -e "$APP_DATA_DIR" || -d "$APP_DATA_DIR" ]] || fail '数据路径已存在且不是目录。'
   docker info >/dev/null 2>&1 || fail '无法连接 Docker，请检查服务状态和当前用户权限。'
 }
 container_exists() { docker container inspect "$APP_CONTAINER_NAME" >/dev/null 2>&1; }
