@@ -7,7 +7,7 @@ from app.models.user import ApiKey, User, UserGroup
 async def authenticate(request, db):
     # Only this exact, authenticated admin endpoint accepts a web session.
     # Revalidate the session again during queued admission, never trust a client flag.
-    if request.url.path == '/api/admin/chat-test/completions':
+    if request.scope['path'] == '/api/admin/chat-test/completions':
         from app.core.dependencies import current_user, active_user, administrator
         from app.services.group_access import resolve_group
         user = await current_user(request, db)
@@ -18,7 +18,7 @@ async def authenticate(request, db):
         return None, user, group
 
     scheme, _, raw = request.headers.get('Authorization', '').partition(' ')
-    if request.url.path=='/v1/messages':
+    if request.scope['path']=='/v1/messages':
         alternate=request.headers.get('x-api-key','')
         if alternate and raw and alternate!=raw:raise APIError(401,'INVALID_API_KEY','认证凭证不一致')
         if alternate:scheme,raw='bearer',alternate

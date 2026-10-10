@@ -18,7 +18,6 @@ from app.services import body_logs
 class GatewayPipeline:
     async def run(self, request, db, operation, logical_model=None, payload=None):
         ctx = GatewayContext(request.state.request_id, operation, logical_model, payload)
-        body_logs.begin(ctx)
         ctx.started=getattr(request.state,"started",ctx.started)
         ctx.received_at=getattr(request.state,"received_at",ctx.received_at)
         ctx.client_ip = request.client.host if request.client else ''
@@ -34,6 +33,7 @@ class GatewayPipeline:
             ctx.key, ctx.user, ctx.group = await authentication.authenticate(request, db)
             ctx.stages.append('user_validation'); user_validation.validate(ctx.user)
             ctx.stages.append('group_validation'); group_validation.validate(ctx.group)
+            body_logs.begin(ctx)  # Expensive/custom redaction only after authentication and access checks.
             if operation == 'models':
                 ctx.stages.append('model_permission')
                 result = await model_directory.listing(db, ctx)

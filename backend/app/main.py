@@ -92,7 +92,7 @@ async def request_context(request: Request,call_next):
             # Consume unexpected application errors here so Uvicorn never logs raw exceptions.
             response=await unexpected(request,error)
         response.headers['X-Request-ID']=request.state.request_id
-        fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.url.path,request.method))
+        fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.scope['path'],request.method))
         if fallback_operation and not hasattr(request.state,'gateway_context'):
             # Schema/body failures occur before Pipeline creation. Persist only safe metadata.
             ctx=GatewayContext(request.state.request_id,fallback_operation,getattr(request.state,'safe_model',None))
@@ -102,8 +102,8 @@ async def request_context(request: Request,call_next):
             ctx.response_status=response.status_code;ctx.stages=['request_validation','call_log']
             await call_log.write(ctx,'failure',getattr(request.state,'failure_code','INTERNAL_ERROR'))
         public_brand_asset=(request.method in ('GET','HEAD') and response.status_code in (200,304)
-            and request.url.path in ('/api/public/settings/assets/logo','/api/public/settings/assets/icon'))
-        if request.url.path.startswith(('/api/','/v1/')) and not public_brand_asset:
+            and request.scope['path'] in ('/api/public/settings/assets/logo','/api/public/settings/assets/icon'))
+        if request.scope['path'].startswith(('/api/','/v1/')) and not public_brand_asset:
             response.headers['Cache-Control']='no-store'
         logging.getLogger('app.requests').info('method=%s status=%s',request.method,response.status_code)
         return response
@@ -114,7 +114,7 @@ async def request_context(request: Request,call_next):
 
 def error_body(request,code,message,status):
     error={'code':code,'message':message,'type':'gateway_error','request_id':request.state.request_id}
-    if request.url.path=='/v1/messages':
+    if request.scope['path']=='/v1/messages':
         error['type']='authentication_error' if status==401 else 'permission_error' if status==403 else 'rate_limit_error' if status==429 else 'invalid_request_error' if status<500 else 'api_error'
         return {'type':'error','error':error,'request_id':request.state.request_id}
     return {'error':error}

@@ -82,7 +82,7 @@ docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.5 .
 curl -fsS http://127.0.0.1:18080/health
 ```
 
-默认容器名称为 `helidata-ai-gateway`，访问地址为 `http://服务器IP:18080`，数据保存在项目目录 `data/`。首次源码部署初始化 `admin` 并生成随机密码，在受保护的启动日志中查看 `INITIAL ADMIN`，登录后修改密码。
+默认容器名称为 `helidata-ai-gateway`，访问地址为 `http://服务器IP:18080`，数据保存在项目目录 `data/`。首次源码部署初始化 `admin` 并生成随机密码，初始密码仅写入容器内 `/data/config/initial-admin-password.txt`（权限 600），不写入日志。服务器管理员通过 `docker exec -u root helidata-ai-gateway cat /data/config/initial-admin-password.txt` 查看；登录改密后执行 `docker exec -u root helidata-ai-gateway rm /data/config/initial-admin-password.txt` 删除一次性文件。
 
 ```bash
 ./stop.sh       # 正常停止，保留容器和数据

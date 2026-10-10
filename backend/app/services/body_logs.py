@@ -1,9 +1,11 @@
 """Opt-in bounded body previews. Never capture authentication headers."""
 import json
+from time import monotonic
 import regex
 from app.core.config import get_settings
 
 LIMIT=16*1024
+REDACTION_BUDGET=.05
 SENSITIVE=regex.compile(r'(?i)(password|authorization|cookie|api.?key|access.?token|refresh.?token|secret|credential)')
 TOKENS=regex.compile(r'(?i)(?:sk-[a-z0-9_-]{8,}|bearer\s+[a-z0-9._~-]+|(?:password|api.?key|token|secret)\s*[:=]\s*[^\s,;]+)')
 
@@ -11,11 +13,15 @@ TOKENS=regex.compile(r'(?i)(?:sk-[a-z0-9_-]{8,}|bearer\s+[a-z0-9._~-]+|(?:passwo
 def redact(value,policy):
     rules=[regex.compile(p) for p in policy.get('redaction_rules',[])]
     visited=0
+    deadline=monotonic()+REDACTION_BUDGET
     def text(value):
+        if monotonic()>=deadline:return '[REDACTION_TIMEOUT]'
         value=value[:4096]
         try:
-            value=TOKENS.sub('[REDACTED]',value,timeout=.01)
-            for rule in rules:value=rule.sub('[REDACTED]',value,timeout=.01)
+            for rule in [TOKENS,*rules]:
+                remaining=deadline-monotonic()
+                if remaining<=0:return '[REDACTION_TIMEOUT]'
+                value=rule.sub('[REDACTED]',value,timeout=min(.01,remaining))
         except TimeoutError:return '[REDACTION_TIMEOUT]'
         return value
     def walk(item,depth=0):

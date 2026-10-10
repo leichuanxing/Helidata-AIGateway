@@ -136,8 +136,17 @@ async def logout(request: Request,response: Response,db: AsyncSession=Depends(ge
 @router.post('/change-password')
 async def change_password(body: PasswordChange,request: Request,response: Response,
                           user: User=Depends(current_user),db: AsyncSession=Depends(get_session)):
+    cfg=get_settings().security
+    attempt_key='password-change:account:'+str(user.id)
+    try:
+        permitted=await redis_client.eval("local n=tonumber(redis.call('GET',KEYS[1]) or '0'); if n>=tonumber(ARGV[1]) then return 0 end; n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[2]) end; return 1",1,attempt_key,cfg.login_max_attempts,cfg.login_lock_seconds)
+        if not permitted:raise APIError(429,'PASSWORD_CHANGE_LIMITED','原密码尝试次数过多，请稍后重试')
+    except APIError:raise
+    except Exception:raise APIError(503,'AUTH_UNAVAILABLE','认证服务暂不可用') from None
     await db.refresh(user,with_for_update=True)
     if not await verify_password(user.password_hash,body.old_password):
+        audit(db,user.id,'change_password_failed',user.id,request.client.host,result='failure')
+        await db.commit()
         raise APIError(400,'PASSWORD_INCORRECT','原密码错误')
     if await verify_password(user.password_hash,body.new_password):
         raise APIError(400,'PASSWORD_UNCHANGED','新密码不能与原密码相同')
@@ -146,5 +155,7 @@ async def change_password(body: PasswordChange,request: Request,response: Respon
     await revoke_all(db,user)
     audit(db,user.id,'change_password',user.id,request.client.host)
     await db.commit()
+    try:await redis_client.delete(attempt_key)
+    except Exception:pass  # A committed password change remains successful.
     clear(response)
     return {'data':{'message':'密码已修改，请重新登录'}}
