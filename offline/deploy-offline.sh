@@ -4,7 +4,7 @@ set +x
 umask 077
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 APP_CONTAINER_NAME="${APP_CONTAINER_NAME:-helidata-ai-gateway}"
-APP_IMAGE='helidata-ai-gateway:v1.0.3-offline'
+APP_IMAGE='helidata-ai-gateway:v1.0.5-offline'
 INITIAL_FILE=''
 cleanup() { unset PASSWORD CONFIRM_PASSWORD; }
 trap cleanup EXIT
@@ -14,7 +14,7 @@ docker info >/dev/null 2>&1 || fail 'Docker 未启动或当前用户无操作权
 [[ "$(uname -m)" == x86_64 ]] || fail '此部署包适用于 Linux amd64（x86_64）。'
 [[ "$APP_CONTAINER_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail '容器名称无效。'
 if docker container inspect "$APP_CONTAINER_NAME" >/dev/null 2>&1; then fail '应用容器已存在；已部署环境请使用 start-offline.sh。'; fi
-printf '\n合力数据AI网关 v1.0.3 离线部署\n'
+printf '\n合力数据AI网关 v1.0.5 离线部署\n'
 while true; do
   read -r -p '请输入宿主机数据目录 [/opt/AIGateway/data]: ' DATA_DIR || fail '输入已结束。'
   DATA_DIR="${DATA_DIR:-/opt/AIGateway/data}"
@@ -56,7 +56,7 @@ while true; do
 done
 printf '\n部署目录：%s\n管理员：%s\n应用端口：%s\n正在校验离线包…\n' "$DATA_DIR" "$ADMIN_USER" "$APP_PORT"
 (cd "$ROOT" && sha256sum --check SHA256SUMS) || fail '文件校验失败，请重新获取完整部署包。'
-docker load --input "$ROOT/images/helidata-ai-gateway-v1.0.3-image.tar.gz"
+docker load --input "$ROOT/images/helidata-ai-gateway-v1.0.5-image.tar.gz"
 EXPECTED_ID="$(cat "$ROOT/image-id.txt")"
 [[ "$EXPECTED_ID" =~ ^sha256:[a-f0-9]{64}$ ]] || fail '镜像清单格式无效。'
 [[ "$(docker image inspect "$APP_IMAGE" --format '{{.Id}}')" == "$EXPECTED_ID" ]] || fail '加载的镜像与离线包不一致。'
