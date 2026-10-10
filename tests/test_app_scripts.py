@@ -45,7 +45,7 @@ class ApplicationScriptsTest(unittest.TestCase):
   self.assertIn(['start','helidata-ai-gateway'],self.calls())
  def test_first_start_uses_local_image_and_preserves_spaces(self):
   r=self.run_script('start.sh',{'exists':False});self.assertEqual(r.returncode,0,r.stderr)
-  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.5');self.assertIn('unless-stopped',run);self.assertIn('--pull=never',run)
+  run=next(a for a in self.calls() if a[0]=='run');self.assertIn(str(self.data)+':/data:Z',run);self.assertEqual(run[-1],'helidata-ai-gateway:v1.0.6');self.assertIn('unless-stopped',run);self.assertIn('--pull=never',run)
  def test_missing_image_does_not_create_container(self):
   r=self.run_script('start.sh',{'exists':False,'image_available':False});self.assertNotEqual(r.returncode,0);self.assertFalse(self.data.exists());self.assertFalse(any(a[0]=='run' for a in self.calls()))
  def test_mount_and_port_mismatch_block_changes(self):
@@ -85,7 +85,7 @@ class ApplicationScriptsTest(unittest.TestCase):
    shutil.copyfile(ROOT/name,base/name)
   for name in ('start-offline.sh','stop-offline.sh'):
    shutil.copyfile(ROOT/'offline'/name,base/name)
-  (base/'deployment.env').write_text('export APP_CONTAINER_NAME=offline-fixture\nexport APP_IMAGE=helidata-ai-gateway:v1.0.5-offline\nexport APP_PORT=18092\nexport APP_DATA_DIR='+str(self.data).replace(' ','\\ ')+'\n')
+  (base/'deployment.env').write_text('export APP_CONTAINER_NAME=offline-fixture\nexport APP_IMAGE=helidata-ai-gateway:v1.0.6-offline\nexport APP_PORT=18092\nexport APP_DATA_DIR='+str(self.data).replace(' ','\\ ')+'\n')
   for wrapper,status in (('start-offline.sh','exited'),('stop-offline.sh','running')):
    self.state.write_text(json.dumps({'status':status,'port':'18092'}))
    r=subprocess.run(['bash',str(base/wrapper)],env=self.env,cwd='/',capture_output=True,text=True,timeout=15)

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 APP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 APP_CONTAINER_NAME="${APP_CONTAINER_NAME:-helidata-ai-gateway}"
-APP_IMAGE="${APP_IMAGE:-helidata-ai-gateway:v1.0.5}"
+APP_IMAGE="${APP_IMAGE:-helidata-ai-gateway:v1.0.6}"
 APP_PORT="${APP_PORT:-18080}"
 APP_DATA_DIR="${APP_DATA_DIR:-$APP_ROOT/data}"
 APP_START_TIMEOUT="${APP_START_TIMEOUT:-180}"

@@ -2,7 +2,7 @@
 
 合力数据 AI 网关（HeliData AI Gateway）提供统一的模型接入、访问授权、智能路由、内容合规和调用分析，帮助团队集中管理模型供应商、API Key、Token 配额与并发容量。
 
-**当前版本：v1.0.5** · **数据库迁移：0031**
+**当前版本：v1.0.6** · **数据库迁移：0031**
 
 ## 功能
 
@@ -75,9 +75,9 @@
 ```bash
 git clone https://github.com/leichuanxing/Helidata-AIGateway.git /opt/AIGateway
 cd /opt/AIGateway
-git checkout v1.0.5
+git checkout v1.0.6
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.5 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.6 .
 ./start.sh
 curl -fsS http://127.0.0.1:18080/health
 ```
@@ -93,22 +93,22 @@ curl -fsS http://127.0.0.1:18080/health
 
 ## 离线部署
 
-维护者构建 v1.0.5 离线镜像和部署包：
+维护者构建 v1.0.6 离线镜像和部署包：
 
 ```bash
-docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.5-offline .
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.6-offline .
 python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
 ```
 
 将生成的完整包复制到目标服务器：
 
 ```bash
-tar -xzf helidata-ai-gateway-v1.0.5-linux-amd64-offline.tar.gz
-cd helidata-ai-gateway-v1.0.5-linux-amd64
+tar -xzf helidata-ai-gateway-v1.0.6-linux-amd64-offline.tar.gz
+cd helidata-ai-gateway-v1.0.6-linux-amd64
 sudo ./deploy-offline.sh
 ```
 
-安装器引导填写数据目录、管理员用户名、密码和端口。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 与 util-linux，使用新的空数据目录。密码隐藏输入，部署配置不保存明文密码。详情见[离线部署说明](offline/README.md)。现有旧版离线包保留其原版本；v1.0.5 包需执行上述构建生成。
+安装器引导填写数据目录、管理员用户名、密码和端口。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 与 util-linux，使用新的空数据目录。密码隐藏输入，部署配置不保存明文密码。详情见[离线部署说明](offline/README.md)。现有旧版离线包保留其原版本；v1.0.6 包需执行上述构建生成。
 
 ## 模型接入与 API
 
@@ -141,5 +141,5 @@ docker exec helidata-ai-gateway alembic current
 - [系统状态与功能说明](docs/current-status.md)
 - [部署、备份与恢复](docs/deployment.md)
 - [数据库设计](docs/database-design.md)
-- [v1.0.5 发布记录](docs/release-v1.0.5.md)
+- [v1.0.6 发布记录](docs/release-v1.0.6.md)
 - [许可证](LICENSE)
