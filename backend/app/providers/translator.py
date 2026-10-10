@@ -23,6 +23,13 @@ def chat_content(content):
             match=re.fullmatch(r'data:(image/(?:jpeg|png|gif|webp));base64,(.+)',url,re.S)
             source={'type':'base64','media_type':match[1],'data':match[2]} if match else {'type':'url','url':url}
             result.append({'type':'image','source':source})
+        elif b.get('type')=='file':
+            fields(b,('type','file'));document=b.get('file');fields(document,('filename','file_data'))
+            data=document.get('file_data')
+            if not isinstance(data,str):fail()
+            match=re.fullmatch(r'data:application/pdf;base64,([A-Za-z0-9+/]+={0,2})',data)
+            if not match:fail()
+            result.append({'type':'document','source':{'type':'base64','media_type':'application/pdf','data':match[1]},**({'title':document['filename']} if document.get('filename') else {})})
         else:fail()
     return result
 def anthropic_content(content):

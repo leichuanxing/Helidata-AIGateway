@@ -67,3 +67,42 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         for fields in [dict(max_tokens=4097),dict(messages=[dict(role='tool',content='test')]),dict(stream='true'),dict(messages=[dict(role='user',content='中'*16000)]*100)]:
             body=dict(model='chat',messages=[dict(role='user',content='hello')]);body.update(fields)
             with self.assertRaises(ValidationError):ChatTestInput.model_validate(body)
+
+    def test_multimodal_content_validation(self):
+        import base64
+        image='data:image/png;base64,'+base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode()
+        pdf='data:application/pdf;base64,'+base64.b64encode(b'%PDF-1.4 fixture').decode()
+        parts=[dict(type='text',text='analyze'),dict(type='image_url',image_url=dict(url=image)),dict(type='file',file=dict(filename='test.pdf',file_data=pdf))]
+        body=ChatTestInput(model='vision',messages=[dict(role='user',content=parts)])
+        self.assertEqual(body.model_dump()['messages'][0]['content'],parts)
+        invalid=[dict(role='assistant',content=parts),dict(role='user',content=[]),dict(role='user',content=[dict(type='image_url',image_url=dict(url='https://example.com/image.png'))]),dict(role='user',content=[dict(type='file',file=dict(filename='../bad.pdf',file_data=pdf))]),dict(role='user',content=[dict(type='file',file=dict(filename='test.pdf',file_data=pdf+'!'))]),dict(role='user',content=[dict(type='image_url',image_url=dict(url='data:image/png;base64,'+base64.b64encode(b'not png').decode()))])]
+        for item in invalid:
+            with self.subTest(item=item), self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[item])
+        large='data:application/pdf;base64,'+base64.b64encode(b'%PDF-'+b'x'*600000).decode()
+        with self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[dict(role='user',content=[dict(type='file',file=dict(filename='test.pdf',file_data=large))]*2)])
+
+    async def test_text_models_reject_attachments_before_upstream(self):
+        body=ChatTestInput(model='chat',messages=[dict(role='user',content=[dict(type='text',text='file contents')])])
+        db=NS(get=AsyncMock(return_value=NS(model_type='text')))
+        with patch('app.api.admin.chat_test.pipeline.run',AsyncMock()) as run:
+            with self.assertRaises(APIError) as caught:await completion(body,self.request(),NS(),db)
+            self.assertEqual(caught.exception.detail['code'],'MULTIMODAL_MODEL_REQUIRED');run.assert_not_awaited()
+
+    async def test_multimodal_pipeline_preserves_media(self):
+        import base64
+        from app.providers.translator import chat_to_messages
+        pdf='data:application/pdf;base64,'+base64.b64encode(b'%PDF-1.4 fixture').decode()
+        parts=[dict(type='text',text='analyze'),dict(type='file',file=dict(filename='report.pdf',file_data=pdf))]
+        body=ChatTestInput(model='vision',messages=[dict(role='user',content=parts)])
+        with patch('app.api.admin.chat_test.pipeline.run',AsyncMock()) as run:
+            await completion(body,self.request(),NS(),NS(get=AsyncMock(return_value=NS(model_type='multimodal'))))
+        payload=run.call_args.args[4]
+        self.assertEqual(payload['messages'][0]['content'],parts)
+        converted=chat_to_messages(payload)['messages'][0]['content'][1]
+        self.assertEqual(converted['type'],'document');self.assertEqual(converted['source']['media_type'],'application/pdf')
+        self.assertEqual(converted['source']['data'],pdf.split(',',1)[1]);self.assertEqual(converted['title'],'report.pdf')
+
+    def test_media_compliance_still_fails_closed(self):
+        from app.gateway.compliance import content
+        with self.assertRaises(APIError) as caught:content(NS(operation='chat',payload={'messages':[{'content':[{'type':'file','file':{'filename':'a.pdf'}}]}]}))
+        self.assertEqual(caught.exception.detail['code'],'COMPLIANCE_MEDIA_UNSUPPORTED')
