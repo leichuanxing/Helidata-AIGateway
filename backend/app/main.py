@@ -43,6 +43,8 @@ async def lifespan(app):
     from app.services import route_jobs,compliance_jobs,compliance_logs,backups
     from app.services import operations_settings,operations_jobs
     await operations_settings.load()
+    from app.services import gateway_security
+    await gateway_security.load()
     from app.services import external_logs
     external_worker=asyncio.create_task(external_logs.loop())
     operations_worker=asyncio.create_task(operations_jobs.loop())
@@ -74,7 +76,7 @@ async def lifespan(app):
     await engine.dispose()
 
 
-app=FastAPI(title='合力数据AI网关',version='1.0.6',lifespan=lifespan)
+app=FastAPI(title='合力数据AI网关',version='1.0.7',lifespan=lifespan)
 from app.core.body_limit import BodyLimitMiddleware
 app.add_middleware(BodyLimitMiddleware)
 
@@ -87,11 +89,22 @@ async def request_context(request: Request,call_next):
     token=request_id.set(request.state.request_id)
     try:
         try:
+            from app.services.gateway_security import enforce
+            await enforce(request)
             response=await call_next(request)
+        except APIError as error:
+            response=await api_error(request,error)
         except Exception as error:
             # Consume unexpected application errors here so Uvicorn never logs raw exceptions.
             response=await unexpected(request,error)
         response.headers['X-Request-ID']=request.state.request_id
+        if request.scope['path']=='/api/admin/chat-test/completions':
+            ctx=getattr(request.state,'gateway_context',None)
+            result=ctx.deferred.get('compliance','not_reached') if ctx else 'not_reached'
+            status=result.get('action','not_reached') if isinstance(result,dict) else result
+            if status in ('block','audit','pass','disabled','not_applicable','not_reached'):
+                response.headers['X-Content-Compliance']=status
+
         fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.scope['path'],request.method))
         if fallback_operation and not hasattr(request.state,'gateway_context'):
             # Schema/body failures occur before Pipeline creation. Persist only safe metadata.
@@ -123,7 +136,7 @@ def error_body(request,code,message,status):
 @app.exception_handler(APIError)
 async def api_error(request,error):
     request.state.failure_code=error.detail['code']
-    return JSONResponse(error_body(request,error.detail['code'],error.detail['message'],error.status_code),status_code=error.status_code)
+    return JSONResponse(error_body(request,error.detail['code'],error.detail['message'],error.status_code),status_code=error.status_code,headers=error.headers)
 
 
 @app.exception_handler(RequestValidationError)
@@ -202,3 +215,6 @@ app.include_router(settings_router)
 
 from app.api.admin.chat_test import router as chat_test_router
 app.include_router(chat_test_router)
+
+from app.api.admin.gateway_security import router as security_router
+app.include_router(security_router)

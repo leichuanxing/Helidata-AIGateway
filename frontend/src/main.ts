@@ -7,6 +7,7 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/console.css'
 import './styles/refinement.css'
+import './styles/management.css'
 import {navigating} from './ui/navigation'
 import PageHeader from './components/PageHeader.vue'
 import EmptyState from './components/EmptyState.vue'
@@ -40,6 +41,7 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/first-password',component:Password},
   {path:'/admin/dashboard',component:Dashboard,meta:{admin:true}},
   {path:'/admin/chat-test',component:ChatTest,meta:{admin:true}},
+  {path:'/admin/gateway-security',component:()=>import('./views/GatewaySecurity.vue'),meta:{superAdmin:true}},
   {path:'/admin/settings',component:Settings,meta:{superAdmin:true}},
   {path:'/admin/backups',component:SystemOperations,meta:{superAdmin:true}},
   {path:'/admin/audit-logs',component:SystemOperations,meta:{admin:true}},

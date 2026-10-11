@@ -1,6 +1,6 @@
 """OpenAI compatible input; provider extensions survive validation unchanged."""
 import json
-from typing import Literal
+from typing import ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
@@ -28,6 +28,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatInput(BaseModel):
+    max_payload_bytes: ClassVar[int] = 2 * 1024 * 1024
     model_config = ConfigDict(extra='allow', allow_inf_nan=False)
     model: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$')
     messages: list[ChatMessage] = Field(min_length=1, max_length=1000)
@@ -42,8 +43,8 @@ class ChatInput(BaseModel):
 
     @model_validator(mode='after')
     def bounded_payload(self):
-        if len(json.dumps(self.model_dump(exclude_unset=True), ensure_ascii=False, allow_nan=False).encode()) > 2 * 1024 * 1024:
-            raise ValueError('chat payload exceeds 2 MiB')
+        if len(json.dumps(self.model_dump(exclude_unset=True), ensure_ascii=False, allow_nan=False).encode()) > self.max_payload_bytes:
+            raise ValueError(f'chat payload exceeds {self.max_payload_bytes // (1024 * 1024)} MiB')
         return self
 
 

@@ -13,7 +13,12 @@ from app.services.model_catalog import catalog
 router = APIRouter(prefix='/api/admin/chat-test', tags=['对话测试'])
 pipeline = GatewayPipeline()
 
-MAX_ATTACHMENT_BYTES = 1024 * 1024
+MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
+MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
+MAX_DATA_URL_LENGTH = (MAX_ATTACHMENT_BYTES + 2) // 3 * 4 + 64
+
+class PlaygroundChatInput(ChatInput):
+    max_payload_bytes = MAX_PAYLOAD_BYTES
 
 def decoded_data(value, mime):
     prefix = f'data:{mime};base64,'
@@ -21,13 +26,13 @@ def decoded_data(value, mime):
         raise ValueError('附件必须使用受支持的内嵌文件格式')
     encoded = value[len(prefix):]
     if len(encoded) > (MAX_ATTACHMENT_BYTES + 2) // 3 * 4:
-        raise ValueError('附件最大为1 MiB')
+        raise ValueError('附件最大为3 MiB')
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (ValueError, binascii.Error):
         raise ValueError('附件Base64格式无效') from None
     if not raw or len(raw) > MAX_ATTACHMENT_BYTES:
-        raise ValueError('附件为空或超过1 MiB')
+        raise ValueError('附件为空或超过3 MiB')
     valid = {'image/png': raw.startswith(b'\x89PNG\r\n\x1a\n'),
              'image/jpeg': raw.startswith(b'\xff\xd8\xff'),
              'image/gif': raw.startswith((b'GIF87a', b'GIF89a')),
@@ -40,11 +45,11 @@ def decoded_data(value, mime):
 class TextPart(BaseModel):
     model_config = ConfigDict(extra='forbid')
     type: Literal['text']
-    text: str = Field(min_length=1, max_length=66000)
+    text: str = Field(min_length=1, max_length=MAX_ATTACHMENT_BYTES + 512)
 
 class ImageData(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    url: str = Field(max_length=1400000)
+    url: str = Field(max_length=MAX_DATA_URL_LENGTH)
 
     @field_validator('url')
     @classmethod
@@ -63,7 +68,7 @@ class ImagePart(BaseModel):
 class FileData(BaseModel):
     model_config = ConfigDict(extra='forbid')
     filename: str = Field(min_length=1, max_length=200)
-    file_data: str = Field(max_length=1400000)
+    file_data: str = Field(max_length=MAX_DATA_URL_LENGTH)
 
     @field_validator('filename')
     @classmethod
@@ -93,8 +98,8 @@ class Message(BaseModel):
     @model_validator(mode='after')
     def valid_content(self):
         if isinstance(self.content, str):
-            if not 1 <= len(self.content) <= 16000:
-                raise ValueError('消息文本须为1至16000字符')
+            if not 1 <= len(self.content) <= (MAX_PAYLOAD_BYTES if self.role == 'assistant' else 16000):
+                raise ValueError('消息文本长度超限：用户及系统消息最多16000字符，助手历史受请求总大小限制')
         else:
             if self.role != 'user' or not 1 <= len(self.content) <= 5:
                 raise ValueError('只有用户消息可以包含附件，每条最多5个内容块')
@@ -108,8 +113,11 @@ class Message(BaseModel):
                 elif isinstance(part, FilePart):
                     count += 1
                     size += len(decoded_data(part.file.file_data, 'application/pdf'))
+                elif isinstance(part, TextPart) and part.text.startswith('附件：'):
+                    count += 1
+                    size += len(part.text.partition('\n')[2].encode('utf-8'))
             if count > 4 or size > MAX_ATTACHMENT_BYTES:
-                raise ValueError('每条消息最多4个附件，附件总大小不超过1 MiB')
+                raise ValueError('每条消息最多4个附件，附件总大小不超过3 MiB')
         return self
 
 class ChatTestInput(BaseModel):
@@ -117,12 +125,12 @@ class ChatTestInput(BaseModel):
     model: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$')
     messages: list[Message] = Field(min_length=1, max_length=100)
     temperature: float = Field(default=0.7, ge=0, le=2)
-    max_tokens: int = Field(default=512, ge=1, le=4096, strict=True)
+    max_tokens: int = Field(default=512, ge=1, le=65535, strict=True)
     stream: bool = Field(default=True, strict=True)
 
     @model_validator(mode='after')
     def bounded_payload(self):
-        ChatInput.model_validate(self.model_dump())
+        PlaygroundChatInput.model_validate(self.model_dump())
         return self
 
 @router.get('/models')
@@ -152,5 +160,5 @@ async def completion(body: ChatTestInput, request: Request, user=Depends(adminis
     payload = body.model_dump()
     if body.stream:
         payload['stream_options'] = {'include_usage': True}
-    validated = ChatInput.model_validate(payload)
+    validated = PlaygroundChatInput.model_validate(payload)
     return await pipeline.run(request, db, 'chat', body.model, validated.model_dump(exclude_unset=True))

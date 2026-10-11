@@ -49,6 +49,62 @@ class ComplianceTests(unittest.IsolatedAsyncioTestCase):
         self.logs=self.stack.enter_context(patch.object(compliance.compliance_logs,'write',
             AsyncMock(return_value='stored')))
 
+    async def test_multimodal_text_blocks_and_media_metadata_does_not(self):
+        from copy import deepcopy
+        for prompt,blocked in [('提取图片文字',False),('blocked-text',True)]:
+            ctx=context('real')
+            ctx.payload['messages'][0]['content']=[{'type':'text','text':prompt},
+                {'type':'image_url','image_url':{'url':'https://example.com/blocked-text.png'}},
+                {'type':'file','file':{'filename':'blocked-text.pdf','file_data':'blocked-text'}}]
+            original=deepcopy(ctx.payload)
+            if blocked:
+                with self.assertRaises(APIError) as caught:await compliance.check(DB([policy(1,['real'])]),ctx)
+                self.assertEqual(caught.exception.detail['code'],'CONTENT_BLOCKED')
+            else:
+                await compliance.check(DB([policy(1,['real'])]),ctx)
+                self.assertEqual(ctx.deferred['compliance']['action'],'pass')
+            self.assertEqual(ctx.payload,original)
+
+    async def test_media_only_skips_empty_semantic_embedding(self):
+        ctx=context('real');ctx.payload['messages'][0]['content']=[{'type':'input_image','image_url':'https://example.com/a.png'}]
+        with patch.object(compliance,'embed',AsyncMock()) as embed:
+            await compliance.check(DB([policy(1,['real'],samples=[2])]),ctx)
+        embed.assert_not_awaited()
+        self.assertEqual(ctx.deferred['compliance']['action'],'pass')
+
+    def test_protocols_extract_text_without_media(self):
+        for operation,payload in [('messages',{'messages':[{'content':[{'type':'text','text':'问题'},{'type':'document','source':{'data':'blocked-text'},'text':'blocked-text'}]}]}),
+            ('responses',{'input':[{'content':[{'type':'input_text','text':'问题'},{'type':'input_image','image_url':'blocked-text'},{'type':'input_file','file_data':'blocked-text'}]}]})]:
+            self.assertEqual(compliance.content(NS(operation=operation,payload=payload)),'问题')
+
+    async def test_multiline_sample_literal_blocks_without_embedding(self):
+        sample=dict(id=2,revision=1,vector_status='ready',risk='high',status='enabled',
+                    text='山东弘信天诚信息技术有限公司\n北京思源佳通科技有限公司')
+        p=policy(1,['real'],samples=[2]);snapshot=([{k:getattr(p,k) for k in
+            ('id','name','action','risk','description','word_ids','sample_ids','group_ids','models','threshold')}],[],[sample])
+        for prompt in ['山东弘信天诚信息技术有限公司','请介绍北京思源佳通科技有限公司']:
+            ctx=context('real');ctx.payload['messages'][0]['content']=prompt
+            with patch.object(compliance,'load',AsyncMock(return_value=snapshot)), \
+                 patch.object(compliance,'embed',AsyncMock()) as embed:
+                with self.assertRaises(APIError) as caught:await compliance.check(DB([]),ctx)
+            self.assertEqual(caught.exception.detail['code'],'CONTENT_BLOCKED');embed.assert_not_awaited()
+            self.assertEqual(ctx.deferred['compliance']['matches'][0]['evidence'][0]['match_type'],'literal')
+
+    async def test_literal_audit_does_not_repeat_semantic_call(self):
+        p=policy(1,['real'],action='audit',samples=[2]);sample=dict(id=2,revision=1,
+            vector_status='pending',risk='high',status='enabled',text='blocked-text')
+        snapshot=([{k:getattr(p,k) for k in ('id','name','action','risk','description','word_ids','sample_ids','group_ids','models','threshold')}],[],[sample])
+        ctx=context('real')
+        with patch.object(compliance,'load',AsyncMock(return_value=snapshot)),patch.object(compliance,'embed',AsyncMock()) as embed:
+            await compliance.check(DB([]),ctx)
+        self.assertEqual(ctx.deferred['compliance']['action'],'audit');embed.assert_not_awaited()
+
+    def test_literal_normalization_and_no_partial_line_false_positive(self):
+        from app.services.compliance_sources import sample_literal_matches
+        sample=dict(id=2,text='ＡＢＣ Company\nSecond Company',risk='high')
+        self.assertEqual(sample_literal_matches([sample],'please review abc company')[0]['matched_text'],'ＡＢＣ Company')
+        self.assertEqual(sample_literal_matches([sample],'Company'),[])
+
     async def test_actual_model_policy_blocks_after_route(self):
         db=DB([policy(1,['real'])]);ctx=context()
         await compliance.check(db,ctx)

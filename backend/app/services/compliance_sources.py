@@ -20,3 +20,18 @@ def word_matches(words,text):
   except TimeoutError:raise APIError(503,'COMPLIANCE_MATCH_TIMEOUT','正则审核超时，请修改规则') from None
   if hit:results.append({'source':'word','id':word['id'],'kind':word['kind'],'risk':word['risk'],'text':word['pattern'],'similarity':1})
  return results
+
+
+def sample_literal_matches(samples, text):
+ # Each non-empty sample line is a literal baseline; semantic checks cover paraphrases.
+ results=[];folded=normalized(text);deadline=monotonic()+.1
+ for sample in samples:
+  if monotonic()>deadline:raise APIError(503,'COMPLIANCE_MATCH_TIMEOUT','审核样本原文匹配超时，请重试')
+  for line in sample['text'].splitlines():
+   candidate=normalized(line.strip())
+   if candidate and candidate in folded:
+    results.append({'source':'sample','id':sample['id'],'risk':sample['risk'],
+                    'text':sample['text'],'matched_text':line.strip(),
+                    'similarity':1,'match_type':'literal'})
+    break
+ return results

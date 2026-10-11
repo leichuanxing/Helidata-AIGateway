@@ -27,7 +27,7 @@ const links=computed(()=>portalMode.value?[
   {to:'/admin/compliance/words',label:'内容合规',icon:'shield'},
   {to:'/admin/usage',label:'用量统计',icon:'chart'},
   {to:'/admin/call-logs',label:'调用日志',icon:'file'},
-  ...(auth.user?.role==='super_admin'&&operationsReady?[{to:'/admin/settings',label:'系统设置',icon:'settings'}]:[])
+  ...(auth.user?.role==='super_admin'&&operationsReady?[{to:'/admin/gateway-security',label:'网关安全',icon:'shield'},{to:'/admin/settings',label:'系统设置',icon:'settings'}]:[])
 ])
 function active(to:string){return route.path.startsWith(to)||to==='/admin/compliance/words'&&route.path.startsWith('/admin/compliance/')}
 const current=computed(()=>links.value.find(x=>active(x.to)))

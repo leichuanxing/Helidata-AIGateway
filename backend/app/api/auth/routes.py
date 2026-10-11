@@ -67,6 +67,8 @@ async def login(body: Login, request: Request, response: Response, db: AsyncSess
     try:
         permitted=await redis_client.eval(reserve,2,key,ipkey,cfg.login_max_attempts,max(30,cfg.login_max_attempts*6),cfg.login_lock_seconds)
         if not permitted:
+            from app.services.gateway_security import event
+            await event(request,'ACCOUNT_LOCKED')
             raise APIError(429,'LOGIN_LIMITED','尝试次数过多，请稍后重试')
     except APIError:
         raise
@@ -77,6 +79,11 @@ async def login(body: Login, request: Request, response: Response, db: AsyncSess
     if not user or not valid or user.status!='enabled' or user.deleted_at:
         audit(db,None,'login_failed',client_ip=request.client.host,result='failure')
         await db.commit()
+        from app.services.gateway_security import event
+        await event(request,'LOGIN_FAILED')
+        # Start the full lock duration when the failure threshold is reached.
+        locked=await redis_client.eval("local n=tonumber(redis.call('GET',KEYS[1]) or '0'); if n==tonumber(ARGV[1]) then redis.call('EXPIRE',KEYS[1],ARGV[2]); return 1 end; return 0",1,key,cfg.login_max_attempts,cfg.login_lock_seconds)
+        if locked: await event(request,'ACCOUNT_LOCKED')
         raise APIError(401,'INVALID_CREDENTIALS','用户名或密码错误')
     try:
         await redis_client.eval("redis.call('DEL',KEYS[1]); local n=tonumber(redis.call('GET',KEYS[2]) or '0'); if n>0 then redis.call('DECR',KEYS[2]) end; return 1",2,key,ipkey)

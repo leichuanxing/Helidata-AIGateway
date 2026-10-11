@@ -13,3 +13,6 @@ lock-build.log
 
 models/compliance/*.onnx
 models/compliance/tokenizer.json
+
+# Generated offline images and installation bundles
+releases/

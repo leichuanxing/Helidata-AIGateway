@@ -64,9 +64,26 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(sticky_key(web),sticky_key(keyed))
 
     def test_payload_limits(self):
-        for fields in [dict(max_tokens=4097),dict(messages=[dict(role='tool',content='test')]),dict(stream='true'),dict(messages=[dict(role='user',content='中'*16000)]*100)]:
+        for fields in [dict(max_tokens=65536),dict(messages=[dict(role='tool',content='test')]),dict(stream='true'),dict(messages=[dict(role='assistant',content='x'*(3*1024*1024))]*3)]:
             body=dict(model='chat',messages=[dict(role='user',content='hello')]);body.update(fields)
             with self.assertRaises(ValidationError):ChatTestInput.model_validate(body)
+
+    def test_expanded_chat_limits_and_public_gateway_limit(self):
+        import base64
+        from app.api.admin.chat_test import MAX_ATTACHMENT_BYTES
+        from app.schemas.chat import ChatInput
+        size=MAX_ATTACHMENT_BYTES
+        pdf='data:application/pdf;base64,'+base64.b64encode(b'%PDF-'+b'x'*(size-5)).decode()
+        parts=[dict(type='text',text='analyze'),dict(type='file',file=dict(filename='a.pdf',file_data=pdf))]
+        body=ChatTestInput(model='vision',max_tokens=65535,messages=[dict(role='assistant',content='x'*20000),dict(role='user',content=parts)])
+        self.assertEqual(body.max_tokens,65535)
+        with self.assertRaises(ValidationError):ChatInput.model_validate(body.model_dump())
+        text=[dict(type='text',text='analyze'),dict(type='text',text='附件：large.txt\n'+'x'*size)]
+        ChatTestInput(model='vision',messages=[dict(role='user',content=text)])
+        text[1]['text']+='x'
+        with self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[dict(role='user',content=text)])
+        oversized='data:application/pdf;base64,'+base64.b64encode(b'%PDF-'+b'x'*(size-4)).decode()
+        with self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[dict(role='user',content=[dict(type='file',file=dict(filename='a.pdf',file_data=oversized))])])
 
     def test_multimodal_content_validation(self):
         import base64
@@ -78,7 +95,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         invalid=[dict(role='assistant',content=parts),dict(role='user',content=[]),dict(role='user',content=[dict(type='image_url',image_url=dict(url='https://example.com/image.png'))]),dict(role='user',content=[dict(type='file',file=dict(filename='../bad.pdf',file_data=pdf))]),dict(role='user',content=[dict(type='file',file=dict(filename='test.pdf',file_data=pdf+'!'))]),dict(role='user',content=[dict(type='image_url',image_url=dict(url='data:image/png;base64,'+base64.b64encode(b'not png').decode()))])]
         for item in invalid:
             with self.subTest(item=item), self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[item])
-        large='data:application/pdf;base64,'+base64.b64encode(b'%PDF-'+b'x'*600000).decode()
+        large='data:application/pdf;base64,'+base64.b64encode(b'%PDF-'+b'x'*1600000).decode()
         with self.assertRaises(ValidationError):ChatTestInput(model='vision',messages=[dict(role='user',content=[dict(type='file',file=dict(filename='test.pdf',file_data=large))]*2)])
 
     async def test_text_models_reject_attachments_before_upstream(self):
@@ -102,7 +119,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(converted['type'],'document');self.assertEqual(converted['source']['media_type'],'application/pdf')
         self.assertEqual(converted['source']['data'],pdf.split(',',1)[1]);self.assertEqual(converted['title'],'report.pdf')
 
-    def test_media_compliance_still_fails_closed(self):
+    def test_media_compliance_extracts_only_text(self):
         from app.gateway.compliance import content
-        with self.assertRaises(APIError) as caught:content(NS(operation='chat',payload={'messages':[{'content':[{'type':'file','file':{'filename':'a.pdf'}}]}]}))
-        self.assertEqual(caught.exception.detail['code'],'COMPLIANCE_MEDIA_UNSUPPORTED')
+        parts=[{'type':'text','text':'提取图片文字'}, {'type':'image_url','image_url':{'url':'data:image/png;base64,blocked-text'}}, {'type':'file','file':{'filename':'blocked-text.pdf','file_data':'blocked-text'}}]
+        self.assertEqual(content(NS(operation='chat',payload={'messages':[{'content':parts}]})), '提取图片文字')

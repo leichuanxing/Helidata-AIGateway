@@ -28,6 +28,8 @@ async def authenticate(request, db):
         .outerjoin(UserGroup, UserGroup.id == User.user_group_id).where(ApiKey.key_hash == digest(raw)))).first()
     if not row or row[0].deleted_at or row[0].status != 'enabled':
         raise APIError(401, 'INVALID_API_KEY', 'API Key 无效')
+    from app.services.gateway_security import enforce_key
+    await enforce_key(request,row[0])
     if row[2] is None:
         from app.services.group_access import default_group
         return row[0],row[1],await default_group(db)

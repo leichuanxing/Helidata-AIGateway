@@ -6,7 +6,7 @@ from sqlalchemy import select,text
 from app.core.database import session_factory
 from app.core.exceptions import APIError
 from app.models.compliance import CompliancePolicy,AuditWord,AuditSample
-from app.services.compliance_sources import word_matches
+from app.services.compliance_sources import word_matches,sample_literal_matches
 from app.services.vector_service import embed,version
 from app.services.route_vectors import encode_vector
 from app.services import compliance_logs
@@ -24,7 +24,9 @@ def content(ctx):
   elif isinstance(item,list):
    for v in item:visit(v)
   elif isinstance(item,dict):
-   if item.get('type') in ('image','image_url','input_image','input_audio','audio','input_file','file','video'):raise APIError(400,'COMPLIANCE_MEDIA_UNSUPPORTED','当前审核仅支持完整文本，请移除非文本输入')
+   # Media stays in the upstream payload; compliance only reads textual parts.
+   # Never inspect URLs, filenames, base64 data, or media metadata as prompt text.
+   if item.get('type') in ('image','image_url','input_image','input_audio','audio','input_file','file','video','document'):return
    if item.get('type')=='tool_use' and isinstance(item.get('input'),dict):
     texts.append(json.dumps(item['input'],ensure_ascii=False));return
    for key in ('content','text','arguments','tool_calls','function','input','output'):
@@ -70,17 +72,20 @@ async def check(db,ctx,*,routed=False,model=None):
  if not policies:
   ctx.deferred.setdefault('compliance','not_applicable');return
  active=[w for w in words if w['status']=='enabled']
- value=content(ctx) if active or any(s['status']=='enabled' and s['vector_status']=='ready' for s in samples) else ''
+ value=content(ctx) if active or any(s['status']=='enabled' for s in samples) else ''
  hits=await asyncio.to_thread(word_matches,active,value)
+ literal_hits=await asyncio.to_thread(sample_literal_matches,[s for s in samples if s['status']=='enabled'],value)
  matches=[]
  for p in policies:
   selected=[dict(h,risk=p['risk'] or h['risk']) for h in hits if h['id'] in p['word_ids']]
+  selected += [dict(h,risk=p['risk'] or h['risk']) for h in literal_hits if h['id'] in p['sample_ids']]
   if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'risk':p['risk'],'description':p['description'],'threshold':p['threshold'],'hit_count':len(selected),'evidence':selected[:20]})
  # Cheap blocking rules always prevent even local semantic work.
  if not any(m['action']=='block' for m in matches):
-  requested={i for p in policies for i in p['sample_ids']}
+  literal_ids={h['id'] for h in literal_hits}
+  requested={i for p in policies for i in p['sample_ids']} - literal_ids
   semantic_ids={s['id'] for s in samples if s['id'] in requested and s['status']=='enabled' and s['vector_status']=='ready'}
-  if semantic_ids:
+  if semantic_ids and value.strip():
    await db.commit()
    vectors=await embed(value,ctx.user.id,ctx.client_ip)
    async with session_factory() as local_db:

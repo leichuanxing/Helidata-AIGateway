@@ -1,121 +1,137 @@
 # 合力数据 AI 网关
 
-合力数据 AI 网关（HeliData AI Gateway）提供统一的模型接入、访问授权、智能路由、内容合规和调用分析，帮助团队集中管理模型供应商、API Key、Token 配额与并发容量。
+合力数据 AI 网关（HeliData AI Gateway）用于集中管理模型供应商、模型授权、智能路由、内容合规和网关访问安全，并提供对话测试、用量分析与调用日志。
 
-**当前版本：v1.0.6** · **数据库迁移：0031**
+**当前版本：v1.0.7** · **数据库迁移：0031**
 
-## 功能
+## 核心功能
 
 | 模块 | 功能 |
 | --- | --- |
-| 概览 | 请求、Token、失败与取消统计，活跃用户、实时并发、趋势及资源排行 |
-| 对话测试 | 多轮对话、流式回复、停止生成、用量与日志；多模态模型支持图片、PDF 和 UTF-8 文本附件 |
-| 模型供应商 | 多供应商账号、多协议、模型映射、连接检查、默认测试模型、代理和容量管理 |
-| 模型组与用户授权 | 模型调度与故障切换，用户组授权、Token 配额、并发限制及个人 API Key |
-| 智能路由 | 虚拟模型、简单与复杂任务分流、样本向量构建、决策日志与统计 |
-| 内容合规 | 敏感词、正则、语义审核，按模型或用户组设置审核及阻断策略 |
-| 用量与调用日志 | 多维统计、趋势、导出，调用链路、上游尝试、Token、首字耗时及错误追踪 |
-| 系统设置 | 品牌、运行参数、共享向量服务、Elasticsearch、系统状态及手动备份 |
+| 概览 | 请求、Token、失败与取消、活跃用户、实时并发、趋势和排行 |
+| 对话测试 | 模型选择、多轮对话、流式回复、停止生成、图片和文件附件、用量和审核记录 |
+| 模型供应商 | 多供应商账号、多协议、完整 API 基础地址、模型映射、默认测试模型、连接检查、代理和并发管理 |
+| 模型组 | 文本、多模态、文生图和向量模型分组、模型调度与故障切换 |
+| 用户与用户组 | 角色管理、模型组授权、Token 配额、并发限制及个人 API Key |
+| 智能路由 | 虚拟模型、样本管理、向量构建、简单与复杂任务分流、决策日志和统计 |
+| 内容合规 | 敏感词、正则和语义审核，模型及用户组策略、阻断与审计、审核日志 |
+| 用量统计 | 时间与多维筛选、Token、成功率、首字耗时、生成速率、趋势和导出 |
+| 调用日志 | 筛选与分页、请求链路、上游尝试、Token、耗时、错误与审核结果 |
+| 网关安全 | IP、管理后台和 API 访问控制、API Key IP 绑定、限流、登录保护、IP 封禁、可信代理、安全日志 |
+| 系统设置 | 品牌、运行参数、显示时区、向量服务、Elasticsearch、系统资源与组件状态、备份 |
 
-支持 OpenAI 兼容接口和 Anthropic Messages 接入。对话、向量、重排、图像生成与多模态能力取决于模型、供应商和上游协议的实际支持情况。
+支持 OpenAI 兼容接口与 Anthropic Messages。对话、向量、重排、图像生成和多模态能力取决于上游模型、供应商与协议的实际支持。
 
-对话测试会真实调用供应商并计入用户组配额。多模态附件每次最多 4 个、合计不超过 1 MiB，单个文本文件不超过 64 KiB；图片和 PDF 发送原始内容，文本文件读取后作为文本发送。
+## v1.0.7 更新
 
-## 系统截图
+- 网关安全采用八个独立功能标签，支持当前标签独立保存与撤销、跨标签保留草稿、地址批量添加和规范化、安全日志筛选与详情。
+- 对话参数使用紧凑布局，会话说明可折叠；默认输出上限 **5000 Token**，可手动设置为 1–65535 Token。
+- 多模态内容合规仅审核文字；图片及 PDF 等附件原样传递给上游。文本附件读取后的文字仍参与审核。
+- 统一智能路由与内容合规页面风格；系统设置支持时区下拉选择，性能参数标注单位。
 
-截图保存在仓库 `pic/` 目录，展示已有系统界面；实际数据与配置以运行环境为准。
+详细变更见 [v1.0.7 发布记录](docs/release-v1.0.7.md)。
+
+## 应用截图
+
+截图位于 `pic/`，展示已部署页面；业务数据和实际配置以运行环境为准。
 
 ### 概览
 
-![概览：业务指标、实时负载与趋势](pic/overview.jpg)
+![概览](pic/overview.jpg)
 
 ### 对话测试
 
-![对话测试：模型选择、多轮对话与附件](pic/chat-test.jpg)
+![对话测试与紧凑参数区](pic/chat-test-v1.0.7.png)
 
 ### 模型供应商
 
-![模型供应商：账号、协议与模型映射](pic/providers.jpg)
+![模型供应商](pic/providers.jpg)
 
-### 用量统计
+### 网关安全
 
-![用量统计：Token、趋势与维度分析](pic/usage-statistics.jpg)
+![网关安全独立功能标签](pic/gateway-security-v1.0.7.png)
 
-### 调用日志
+### 用量统计与调用日志
 
-![调用日志：筛选、请求状态与调用详情](pic/call-logs.jpg)
+![用量统计](pic/usage-statistics.jpg)
+
+![调用日志](pic/call-logs.jpg)
 
 ### 系统设置
 
-![系统设置：品牌与运行配置](pic/system-settings.jpg)
+![系统设置](pic/system-settings.jpg)
 
 ## 技术架构
 
-前端使用 Vue 3、TypeScript、Element Plus 和 ECharts；后端使用 FastAPI、SQLAlchemy 和 HTTPX。单容器内由 Supervisor 管理 Nginx、Uvicorn、PostgreSQL 15 与 Redis，使用 pgvector 支持向量检索，ONNX 本地模型支持语义审核。持久化数据统一挂载到 `/data`。
+前端使用 Vue 3、TypeScript、Element Plus 和 ECharts，后端使用 FastAPI、SQLAlchemy 与 HTTPX。单容器由 Supervisor 管理 Nginx、Uvicorn、PostgreSQL 15 和 Redis；pgvector 提供向量检索，ONNX 本地模型提供语义审核。持久化数据挂载到 `/data`。
 
-| 路径 | 内容 |
+| 目录 | 内容 |
 | --- | --- |
 | `frontend/` | 管理后台与个人门户 |
-| `backend/app/` | API、认证、网关流水线、供应商适配与后台任务 |
-| `backend/alembic/` | 数据库迁移 |
-| `docker/` | Dockerfile、Nginx、Supervisor 与容器入口 |
+| `backend/` | API、认证、网关流水线、供应商适配、数据库迁移和测试 |
+| `docker/` | 镜像构建、Nginx、Supervisor 与容器入口 |
 | `config/` | 配置模板 |
 | `models/compliance/` | 本地审核模型资源与校验清单 |
-| `offline/` | 离线安装及部署包构建工具 |
-| `scripts/` | 启停脚本公共逻辑 |
-| `tests/`、`backend/tests/` | 测试 |
+| `scripts/` | 应用启停公共逻辑 |
+| `offline/` | 离线部署脚本与部署包构建工具 |
 | `docs/` | API、数据库、部署与发布文档 |
-| `pic/` | 系统截图 |
-| `releases/` | 本地生成的部署包与镜像，不随源码提交 |
+| `pic/` | 应用截图 |
+| `releases/` | 本地生成的部署包和镜像，不随源码提交 |
 
 ## 构建与启动
 
-目标环境为 Linux amd64，须安装 Docker Engine；建议至少 4 核 CPU、8 GiB 内存及 20 GiB 可用磁盘，另为数据、日志和备份预留空间。首次构建需要下载依赖及本地审核模型。
+目标环境为 Linux amd64，须安装 Docker Engine。建议至少 4 核 CPU、8 GiB 内存及 20 GiB 可用磁盘，并为数据、日志与备份预留空间。首次构建需要下载依赖和审核模型。
 
 ```bash
 git clone https://github.com/leichuanxing/Helidata-AIGateway.git /opt/AIGateway
 cd /opt/AIGateway
-git checkout v1.0.6
+git checkout v1.0.7
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.6 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.7 .
 ./start.sh
 curl -fsS http://127.0.0.1:18080/health
 ```
 
-默认容器名称为 `helidata-ai-gateway`，访问地址为 `http://服务器IP:18080`，数据保存在项目目录 `data/`。首次源码部署初始化 `admin` 并生成随机密码，初始密码仅写入容器内 `/data/config/initial-admin-password.txt`（权限 600），不写入日志。服务器管理员通过 `docker exec -u root helidata-ai-gateway cat /data/config/initial-admin-password.txt` 查看；登录改密后执行 `docker exec -u root helidata-ai-gateway rm /data/config/initial-admin-password.txt` 删除一次性文件。
+默认容器名为 `helidata-ai-gateway`，应用端口为 `18080`，数据目录为项目内的 `data/`。首次源码部署初始化 `admin` 并生成随机密码，密码仅写入 `/data/config/initial-admin-password.txt`（权限 600），不写入日志。服务器管理员可查看该文件，登录并修改密码后删除一次性文件。
 
 ```bash
-./stop.sh       # 正常停止，保留容器和数据
-./start.sh      # 启动并等待健康检查
+docker exec -u root helidata-ai-gateway cat /data/config/initial-admin-password.txt
+# 修改密码后删除一次性文件
+docker exec -u root helidata-ai-gateway rm /data/config/initial-admin-password.txt
+./stop.sh
+./start.sh
 ```
 
-可通过 `APP_CONTAINER_NAME`、`APP_IMAGE`、`APP_PORT`、`APP_DATA_DIR` 调整启动参数；启停须使用相同配置。已有容器沿用原镜像，升级按[部署手册](docs/deployment.md)执行。
+`stop.sh` 保留容器与数据；`start.sh` 启动后等待健康检查。可通过 `APP_CONTAINER_NAME`、`APP_IMAGE`、`APP_PORT`、`APP_DATA_DIR` 自定义参数，启停使用相同配置。已有容器沿用原镜像，升级与回退按 [部署手册](docs/deployment.md) 执行。
 
 ## 离线部署
 
-维护者构建 v1.0.6 离线镜像和部署包：
+先构建对应版本的基础镜像，再制作离线镜像和安装包：
 
 ```bash
-docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.6-offline .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.7 .
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.7-offline .
 python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
 ```
 
-将生成的完整包复制到目标服务器：
+将 `releases/` 中的完整安装包复制到目标服务器：
 
 ```bash
-tar -xzf helidata-ai-gateway-v1.0.6-linux-amd64-offline.tar.gz
-cd helidata-ai-gateway-v1.0.6-linux-amd64
+tar -xzf helidata-ai-gateway-v1.0.7-linux-amd64-offline.tar.gz
+cd helidata-ai-gateway-v1.0.7-linux-amd64
 sudo ./deploy-offline.sh
 ```
 
-安装器引导填写数据目录、管理员用户名、密码和端口。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 与 util-linux，使用新的空数据目录。密码隐藏输入，部署配置不保存明文密码。详情见[离线部署说明](offline/README.md)。现有旧版离线包保留其原版本；v1.0.6 包需执行上述构建生成。
+安装器交互输入数据目录（默认 `/opt/AIGateway/data`）、管理员用户名（默认 `admin`）、两次密码和应用端口，启动后输出登录信息。密码隐藏输入，部署配置不保存明文密码。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 和 util-linux，并使用新的空数据目录。
+
+源码版本与旧离线产物独立：已有包仍保留原版本，v1.0.7 包须按上述命令重新构建。详见 [离线部署说明](offline/README.md)。
 
 ## 模型接入与 API
 
-1. 在模型供应商中配置账号、协议、API 地址和凭据，建立实际可用的模型映射。
+1. 配置模型供应商账号、实际支持的协议、完整 API 基础地址和凭据，建立模型映射。
 2. 创建模型组，配置调度与故障切换。
-3. 为用户组授权模型组并设置配额与并发。
-4. 用户在个人门户创建 API Key，使用网关地址调用。
+3. 为用户组授权模型组，设置配额与并发。
+4. 用户在个人门户创建 API Key，通过网关调用。
 
 ```bash
 export GATEWAY_BASE=http://服务器IP:18080
@@ -126,7 +142,27 @@ curl "$GATEWAY_BASE/v1/chat/completions" \
   -d '{"model":"已授权的逻辑模型","messages":[{"role":"user","content":"你好"}],"stream":true}'
 ```
 
-更多接口见[API 文档](docs/api.md)。供应商凭据加密保存，个人 API Key 完整值仅创建时显示一次。智能路由的上游向量构建可能产生费用，应按需显式执行。
+供应商凭据加密保存，个人 API Key 完整值仅在创建时显示一次。更多接口见 [API 文档](docs/api.md)。
+
+对话测试使用当前用户的模型权限、配额和合规策略，真实调用可能产生费用。多模态每次最多 4 个附件，合计不超过 3 MiB，支持 PNG、JPEG、GIF、WebP、PDF 和 UTF-8 文本；对话及附件仅保留在当前页面。内容合规不审核图片、音频、视频、PDF、媒体 URL 或文件名；文字匹配和语义审核按已配置策略执行。智能路由样本的上游向量构建也可能产生费用，按需显式执行。
+
+## 网关安全
+
+超级管理员可使用 IP访问控制、管理后台访问控制、API访问控制、请求频率限制、登录安全、IP封禁、可信代理、安全日志八个标签。
+
+- 支持 IPv4、IPv6、单个 IP 和 CIDR 网段；后台来源限制默认关闭，访问登录页后仍需有效账号密码。
+- API Key IP 绑定独立于 API 来源开关生效；IP 和 Key 的每分钟请求上限填 0 表示关闭。
+- 临时封禁到期自动失效，支持永久封禁与解除封禁；规则优先于白名单。
+- 仅指定可信代理可通过 `X-Forwarded-For` / `X-Real-IP` 传递来源地址，禁止信任全网。
+- 保存白名单、封禁和可信代理配置时检查当前管理员 IP，防止误配置导致无法访问。
+- 安全日志支持来源 IP、事件、时间筛选和详情，默认最近 7 天，单次范围不超过 31 天；不记录密码、完整 Key 或对话内容。
+
+网络变化导致管理员无法访问时，服务器管理员可执行本机恢复。该操作清除访问规则、封禁、Key IP 绑定、可信代理与 RPM 限制，保留账号密码和登录保护，并记录恢复事件；重启后生效。
+
+```bash
+docker exec helidata-ai-gateway python -m app.services.gateway_security_recovery --confirm-reset-access
+docker restart helidata-ai-gateway
+```
 
 ## 运维与文档
 
@@ -136,10 +172,10 @@ curl -fsS http://127.0.0.1:18080/health/detail
 docker exec helidata-ai-gateway alembic current
 ```
 
-生产环境使用可信 HTTPS 入口，不对外开放 PostgreSQL 和 Redis 端口。备份包含数据库、配置、凭据解密 Master Key 和上传文件，应保存在受控存储；升级前备份，回退须配套恢复匹配的数据和配置。
+生产环境使用可信 HTTPS 入口，不对外开放 PostgreSQL 和 Redis 端口。备份包含数据库、配置、凭据解密 Master Key 和上传文件，应存放在受控位置；升级前备份，回退时恢复匹配的数据与配置。
 
-- [系统状态与功能说明](docs/current-status.md)
+- [当前状态](docs/current-status.md)
 - [部署、备份与恢复](docs/deployment.md)
 - [数据库设计](docs/database-design.md)
-- [v1.0.6 发布记录](docs/release-v1.0.6.md)
+- [v1.0.7 发布记录](docs/release-v1.0.7.md)
 - [许可证](LICENSE)

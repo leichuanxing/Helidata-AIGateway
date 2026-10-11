@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ManagementTabs from '../components/ManagementTabs.vue'
 import {computed,reactive,ref,watch,onUnmounted} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {ElMessage,ElMessageBox} from 'element-plus'
@@ -93,14 +94,12 @@ const timer=window.setInterval(()=>{if(view.value==='samples'&&!dialog.value&&!l
 onUnmounted(()=>{clearInterval(timer);generation++})
 </script>
 <template>
- <div class="compliance-page">
+ <div class="compliance-page module-page">
   <PageHeader title="内容合规"/>
   <el-alert v-if="error" :title="error" type="error" :closable="false" class="gap"/>
-  <div class="panel">
-   <el-tabs :model-value="view" @tab-change="(name:any)=>router.push('/admin/compliance/'+name)">
-    <el-tab-pane v-for="(name,key) in tabs" :key="key" :name="key" :label="name"/>
-   </el-tabs>
-   <div class="toolbar">
+  <div class="panel module-panel">
+   <ManagementTabs :value="view" :items="tabs" @change="router.push('/admin/compliance/'+$event)"/>
+   <div class="toolbar module-filters">
     <el-select v-if="view!=='policies'" v-model="filters.policy_id" clearable filterable placeholder="全部策略组" class="filter"><el-option v-for="p in policies" :key="p.id" :label="p.name" :value="p.id"/></el-select>
     <el-select v-if="view!=='logs'" v-model="filters.status" clearable placeholder="全部状态" class="filter"><el-option label="启用" value="enabled"/><el-option label="禁用" value="disabled"/></el-select>
     <el-select v-if="view==='samples'" v-model="filters.vector_status" clearable placeholder="全部向量状态" class="filter"><el-option v-for="s in ['not_built','pending','processing','ready','failed']" :key="s" :label="label[s]" :value="s"/></el-select>
@@ -112,15 +111,15 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-date-picker v-model="range" type="datetimerange" start-placeholder="开始时间" end-placeholder="结束时间"/>
     </template>
     <el-input v-model="filters.q" clearable :placeholder="view==='logs'?'搜索 Request ID、模型或证据':view==='words'?'搜索敏感词':view==='samples'?'搜索审核样本':'搜索策略组'" class="search" @keyup.enter="page=1;load()"/>
-    <el-button @click="page=1;load()">查询</el-button><el-button @click="reset">重置</el-button>
+    <el-button type="primary" :loading="loading" @click="page=1;load()">查询</el-button><el-button @click="reset">重置</el-button>
    </div>
-   <div v-if="view!=='logs'" class="toolbar actions">
+   <div v-if="view!=='logs'" class="toolbar module-actions">
     <el-button type="primary" @click="open()">添加{{tabs[view as keyof typeof tabs]}}</el-button>
     <el-button v-if="view==='words'" :disabled="!policies.length" @click="importForm.policy_id=undefined;importForm.lines='';importing=true">批量导入</el-button>
     <template v-if="view==='samples'"><el-button :loading="building" :disabled="!selected.length" @click="build(false)">构建选中向量</el-button><el-button :loading="building" :disabled="!total" @click="build(true)">构建全部向量</el-button></template>
     <span v-if="(view==='words'||view==='samples')&&!policies.length" class="muted">请先创建策略组，再添加{{tabs[view as keyof typeof tabs]}}。</span>
    </div>
-   <el-alert v-if="view==='samples'" type="info" :closable="false" :title="(remoteVectors?'使用系统设置中的共享向量服务；构建向量可能产生费用。':'使用本地向量服务。')+'新增或修改文本后需构建向量；未就绪、禁用及版本过期的样本不参与语义检测。'" class="gap"/>
+   <el-alert v-if="view==='samples'" type="info" :closable="false" :title="(remoteVectors?'使用系统设置中的共享向量服务；构建向量可能产生费用。':'使用本地向量服务。')+'新增或修改文本后需构建向量；未就绪、禁用及版本过期的样本不参与语义检测。'" class="gap module-note"/>
    <el-table :data="rows" v-loading="loading" @selection-change="(list:any[])=>selected=list.map(r=>r.id)" row-key="id" empty-text="暂无记录">
     <el-table-column v-if="view==='samples'" type="selection" width="44"/>
     <el-table-column v-if="view==='words'" prop="pattern" label="敏感词" min-width="220" show-overflow-tooltip/>
@@ -154,7 +153,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-button v-if="view==='logs'" link type="primary" @click="detail=row">查看</el-button>
      <template v-else><el-button link type="primary" @click="open(row)">编辑</el-button><el-button v-if="view==='samples'" link type="primary" :disabled="['pending','processing'].includes(row.vector_status)" @click="build(false,[row.id])">构建向量</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template>
     </template></el-table-column>
-   </el-table>
+   <template #empty><EmptyState :title="'暂无'+tabs[view as keyof typeof tabs]" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
    <el-pagination v-if="view!=='policies'" v-model:current-page="page" :total="total" :page-size="20" layout="total, prev, pager, next" @current-change="load" class="pagination"/>
   </div>
   <el-drawer v-model="dialog" :title="(editing?'编辑':'添加')+tabs[view as keyof typeof tabs]" size="660px" destroy-on-close>
@@ -175,7 +174,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" maxlength="2000"/></el-form-item>
      <el-collapse><el-collapse-item title="规则与适用范围" name="scope">
       <el-form-item label="敏感词"><el-select v-model="form.word_ids" multiple filterable style="width:100%"><el-option v-for="w in words" :key="w.id" :value="w.id" :label="w.pattern+' · '+label[w.status]"/></el-select></el-form-item>
-      <el-form-item label="审核样本"><el-select v-model="form.sample_ids" multiple filterable style="width:100%"><el-option v-for="s in samples" :key="s.id" :value="s.id" :label="s.text.slice(0,45)+' · '+label[s.vector_status]"/></el-select></el-form-item>
+      <p class="muted">审核样本每个非空行先进行原文匹配；未命中原文时使用已构建向量进行语义匹配。需要精确匹配短词时也可配置敏感词。</p><el-form-item label="审核样本"><el-select v-model="form.sample_ids" multiple filterable style="width:100%"><el-option v-for="s in samples" :key="s.id" :value="s.id" :label="s.text.slice(0,45)+' · '+label[s.vector_status]"/></el-select></el-form-item>
       <el-form-item label="语义阈值"><el-input-number v-model="form.threshold" :min="0" :max="1" :step=".01" :precision="2"/><p class="muted">系统配置全局阈值时，以全局值为准。</p></el-form-item>
       <el-form-item label="用户组"><el-select v-model="form.group_ids" multiple filterable placeholder="全部用户组" style="width:100%"><el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name"/></el-select></el-form-item>
       <el-form-item label="模型"><el-select v-model="form.models" multiple filterable placeholder="全部模型" style="width:100%"><el-option v-for="m in models" :key="m.name" :value="m.name" :label="m.name"/></el-select></el-form-item>
@@ -196,7 +195,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
     <h3>命中详情</h3><el-empty v-if="!detail.matches?.length" description="未命中违规依据"/>
     <div v-for="(m,i) in detail.matches" :key="i" class="evidence">
      <h4>{{m.policy_name}} · {{label[m.action]}}</h4>
-     <el-table :data="m.evidence"><el-table-column label="检测方式" width="100"><template #default="{row}">{{label[row.source]}}</template></el-table-column><el-table-column label="证据" min-width="230"><template #default="{row}">{{row.text||'历史未保存原文 · #'+row.id}}</template></el-table-column><el-table-column label="置信度" width="100"><template #default="{row}">{{row.similarity===undefined?'—':Number(row.similarity).toFixed(6)}}</template></el-table-column><el-table-column label="风险" width="80"><template #default="{row}">{{label[row.risk]}}</template></el-table-column></el-table>
+     <el-table :data="m.evidence"><el-table-column label="检测方式" width="100"><template #default="{row}">{{row.match_type==='literal'?'样本原文':label[row.source]}}</template></el-table-column><el-table-column label="证据" min-width="230"><template #default="{row}">{{row.matched_text||row.text||'历史未保存原文 · #'+row.id}}</template></el-table-column><el-table-column label="置信度" width="100"><template #default="{row}">{{row.similarity===undefined?'—':Number(row.similarity).toFixed(6)}}</template></el-table-column><el-table-column label="风险" width="80"><template #default="{row}">{{label[row.risk]}}</template></el-table-column></el-table>
      <p class="muted">共 {{m.hit_count}} 条命中，最多显示20条。语义相似度不是概率。</p>
      <h4>策略详情</h4><el-descriptions :column="2" border><el-descriptions-item label="策略组">{{m.policy_name}}</el-descriptions-item><el-descriptions-item label="动作">{{label[m.action]}}</el-descriptions-item><el-descriptions-item label="风险等级">{{label[m.risk]||'按规则风险'}}</el-descriptions-item><el-descriptions-item label="语义阈值">{{m.threshold??'历史未记录'}}</el-descriptions-item><el-descriptions-item label="描述" :span="2">{{m.description||'—'}}</el-descriptions-item></el-descriptions>
     </div>
