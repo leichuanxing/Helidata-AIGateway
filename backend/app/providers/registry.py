@@ -53,6 +53,8 @@ PROVIDER_TYPES['zhipu']['account_types']={'standard':{'name':'中国区按量付
     'global_payg':{'name':'全球区按量付费','base_url':''}}
 PROVIDER_TYPES['zhipu_coding_plan']['account_types']={'standard':{'name':'中国区 Coding / Token Plan','base_url':PROVIDER_TYPES['zhipu_coding_plan']['base_url']},
     'global_token_plan':{'name':'全球区 Token Plan','base_url':''}}
+from app.providers.presets import enrich
+enrich(PROVIDER_TYPES)
 ADAPTERS={'openai':OpenAIProvider,'anthropic':AnthropicProvider,'ollama':OllamaProvider}
 
 

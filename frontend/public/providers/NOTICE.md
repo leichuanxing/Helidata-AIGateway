@@ -1,0 +1,1 @@
+Brand SVGs: @lobehub/icons-static-svg 1.95.1, MIT license. Source: https://github.com/lobehub/lobe-icons . Brand marks remain the property of their owners. SGLang and Custom OpenAI use original letter badges, not official logos.

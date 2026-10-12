@@ -40,6 +40,7 @@ async def detail(group_id: int,actor=Depends(administrator),db=Depends(get_sessi
 
 
 async def save(db,actor,request,body,row=None):
+    referenced=False
     names=body.logical_models
     found={m.name:m for m in (await db.scalars(select(LogicalModel).where(LogicalModel.name.in_(names)))).all()}
     category=body.protocol_type
@@ -56,9 +57,10 @@ async def save(db,actor,request,body,row=None):
             if name not in found:db.add(LogicalModel(name=name,model_type={'text':'text','multimodal':'multimodal','image':'image','vector':'embedding'}[category]))
     if row:
         from app.models.routing import RouteConfig
-        if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)):
-            if category not in (None,'text'):
-                raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本类型')
+        referenced=bool(await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)))
+        if referenced:
+            if category not in (None,'text','multimodal'):
+                raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本或多模态对话类型')
             virtual=set((await db.scalars(select(RouteConfig.virtual_model))).all())
             if virtual.intersection(names):
                 raise APIError(409,'ROUTE_RECURSION','路由目标模型组不能加入虚拟路由模型')
@@ -73,6 +75,11 @@ async def save(db,actor,request,body,row=None):
         await db.execute(delete(ModelGroupModel).where(ModelGroupModel.model_group_id==row.id))
         db.add_all([ModelGroupModel(model_group_id=row.id,logical_model=name,position=i) for i,name in enumerate(names)])
         await db.flush()
+        if referenced:
+            # Apply the same target invariants as route creation, including
+            # enabled status and at least one usable real Chat mapping.
+            from app.api.admin.smart_route import real_members
+            await real_members(db,row.id)
         result=await group_data(db,row)
         audit(db,actor.id,action,row.id,request.client.host,resource_type='model_group');await db.commit()
     except IntegrityError:

@@ -29,6 +29,14 @@ class SettingsAssetsTest(unittest.IsolatedAsyncioTestCase):
                     await db.execute(text('CREATE TEMP TABLE system_settings (LIKE public.system_settings INCLUDING ALL) ON COMMIT DROP'))
                     await db.execute(text('INSERT INTO system_settings SELECT * FROM public.system_settings'))
                     original=await operations.document(db,private=True)
+                    # Fresh installations may have no uploaded assets. Use a
+                    # deterministic PNG fixture in the temporary table only.
+                    png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+                    original['basic'].update(logo=png,icon=png)
+                    from app.models.user import SystemSetting
+                    row=await db.get(SystemSetting,'operations')
+                    row.value=original
+                    await db.flush()
                     operations.apply(original)
                     app=FastAPI();app.include_router(router)
                     async def session():yield db

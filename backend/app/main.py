@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 import logging
 import asyncio
 import re
-from contextlib import suppress
 from app.services import dashboard_live
 from app.gateway import call_log
 from app.gateway.context import GatewayContext
@@ -54,26 +53,17 @@ async def lifespan(app):
     compliance_replay=asyncio.create_task(compliance_logs.replay())
     replay=asyncio.create_task(call_log.replay_loop())
     sampler=asyncio.create_task(dashboard_live.sample_loop())
-    yield
-    external_worker.cancel()
-    with suppress(asyncio.CancelledError):await external_worker
-    operations_worker.cancel()
-    with suppress(asyncio.CancelledError):await operations_worker
-    backup_worker.cancel()
-    with suppress(asyncio.CancelledError):await backup_worker
-    compliance_vectorizer.cancel();compliance_replay.cancel()
-    with suppress(asyncio.CancelledError):await compliance_vectorizer
-    with suppress(asyncio.CancelledError):await compliance_replay
-    vectorizer.cancel()
-    with suppress(asyncio.CancelledError):await vectorizer
-    sampler.cancel()
-    with suppress(asyncio.CancelledError):await sampler
-    replay.cancel()
-    with suppress(asyncio.CancelledError):await replay
-    from app.providers.pool import pools
-    await pools.close()
-    await redis_client.aclose()
-    await engine.dispose()
+    workers = [external_worker, operations_worker, backup_worker, vectorizer,
+               compliance_vectorizer, compliance_replay, replay, sampler]
+    try:
+        yield
+    finally:
+        import anyio
+        from app.services.lifecycle import shutdown
+        from app.providers.pool import pools
+        with anyio.CancelScope(shield=True):
+            await shutdown(workers, [pools.close, redis_client.aclose, engine.dispose])
+
 
 
 app=FastAPI(title='合力数据AI网关',version='1.0.7',lifespan=lifespan)
