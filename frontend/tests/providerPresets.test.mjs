@@ -1,6 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {accountPreset,categoryProtocols,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
+import {accountPreset,categoryProtocols,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
+
+test('normal providers automatically select all supported category protocols and dedicated URLs',()=>{
+  const type={base_url:'https://api.example/v1',supported_protocols:['openai-completions','openai-responses','anthropic-messages','openai-embeddings'],protocol_urls:{'openai-responses':'https://api.example','anthropic-messages':'https://api.example/anthropic/v1'}}
+  const auto=automaticConnection(type,'standard','multimodal',type.base_url)
+  assert.deepEqual(auto.selected,['openai-completions','openai-responses','anthropic-messages'])
+  assert.equal(auto.urls['openai-responses'],'https://api.example');assert.equal(auto.separate,true)
+  assert.equal(auto.routes['anthropic-messages'].auth_type,'x-api-key')
+  assert.equal(automaticConnection(type,'standard','text',type.base_url+'/').urls['openai-responses'],'https://api.example')
+  assert.deepEqual(automaticConnection(type,'standard','vector',type.base_url).selected,['openai-embeddings'])
+})
+test('plan constraints override automatic wire protocols',()=>{
+  const type={base_url:'https://api.example/v1',supported_protocols:['openai-completions','openai-responses'],account_types:{plan:{base_url:'https://api.example/plan',supported_protocols:['openai-completions']}}}
+  assert.deepEqual(automaticConnection(type,'plan','text','https://api.example/plan').selected,['openai-completions'])
+})
+test('customized server addresses never send traffic to official protocol addresses',()=>{
+  const type={base_url:'https://official.example/v1',supported_protocols:['openai-completions','anthropic-messages'],protocol_urls:{'anthropic-messages':'https://official.example/anthropic/v1'}}
+  const auto=automaticConnection(type,'standard','text','http://private.example/v1')
+  assert.equal(auto.separate,false);assert.deepEqual(Object.values(auto.urls),['http://private.example/v1','http://private.example/v1'])
+})
 
 test('changing the main address updates shared routes but preserves independent addresses',()=>{
   const urls={chat:'https://old.example/v1',responses:'https://independent.example/v1'}

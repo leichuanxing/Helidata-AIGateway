@@ -99,6 +99,8 @@ async def types(actor=Depends(administrator)):
 @router.post('/discover-models')
 async def discover_draft(body: ProviderDiscovery,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     saved=await target(db,body.provider_id) if body.provider_id else None
+    if saved and not body.api_key and saved.provider_type!=body.provider_type and saved.api_key_encrypted:
+        raise APIError(422,'PROVIDER_KEY_REPLACE_REQUIRED','切换供应商后请填写新Key，不能沿用原供应商密钥')
     key=body.api_key.get_secret_value() if body.api_key else decrypt_secret(saved.api_key_encrypted) if saved else None
     validate_input(body,bool(key))
     draft=Provider(**body.model_dump(exclude={'api_key','model_mappings','provider_id'}))
@@ -185,6 +187,8 @@ async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depend
         fields=', '.join('.'.join(str(x) for x in e['loc']) for e in error.errors())
         raise APIError(422,'VALIDATION_ERROR','请检查字段：'+fields) from None
     has_key=bool(body.api_key) or (bool(row.api_key_encrypted) and not body.clear_api_key)
+    if checked.provider_type!=row.provider_type and row.api_key_encrypted and body.api_key is None and not body.clear_api_key:
+        raise APIError(422,'PROVIDER_KEY_REPLACE_REQUIRED','切换供应商后请更换或清除原Key')
     validate_input(checked,has_key)
     probe=Provider(id=row.id,**checked.model_dump(exclude={'api_key','model_mappings'}))
     await validate_test_model(db,probe,body.model_mappings)

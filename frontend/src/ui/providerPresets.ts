@@ -11,6 +11,15 @@ export function categoryProtocols(type:ProviderType|undefined,plan:string,catego
   return options.filter(p=>supported.includes(p))
 }
 
+export function automaticConnection(type:ProviderType|undefined,plan:string,category:string|null,baseUrl:string){
+  baseUrl=baseUrl.trim().replace(/\/+$/,'')
+  const preset=accountPreset(type,plan),selected=categoryProtocols(type,plan,category)
+  const urls=Object.fromEntries(selected.map(name=>[name,baseUrl===preset.base_url?preset.protocol_urls[name]||baseUrl:baseUrl]))
+  const separate=selected.some(name=>urls[name]!==baseUrl)
+  const routes=Object.fromEntries(selected.map(name=>[name,{path_prefix:'',auth_type:name==='anthropic-messages'?'x-api-key' as const:'bearer' as const}]))
+  return {selected,urls,routes,separate}
+}
+
 export function mappingType(category:string|null){return category==='multimodal'?'multimodal':category==='image'?'image':category==='vector'?'embedding':'text'}
 export function syncSharedUrls(urls:Record<string,string>,previous:string,value:string){
   for(const protocol of Object.keys(urls))if(urls[protocol]===previous)urls[protocol]=value

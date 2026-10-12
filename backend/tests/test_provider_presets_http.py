@@ -23,11 +23,15 @@ class ProviderCatalogHTTPTests(unittest.IsolatedAsyncioTestCase):
             for entry in catalog:
                 for plan_name,plan in entry['account_types'].items():
                     name='preset-'+uuid4().hex[:16]
-                    route=entry['default_protocols'][0]
+                    protocols=[p for p in plan.get('supported_protocols',entry['supported_protocols']) if p in ('openai-completions','openai-responses','anthropic-messages')]
+                    route=protocols[0]
+                    urls={**entry['protocol_urls'],**plan.get('protocol_urls',{})}
+                    separate=any(urls.get(p,plan['base_url'])!=plan['base_url'] for p in protocols)
+                    configs={p:{'path_prefix':'','auth_type':'x-api-key' if p=='anthropic-messages' else 'bearer',**({'api_url':urls.get(p,plan['base_url'])} if separate else {})} for p in protocols}
                     model=name+'-model'
                     payload={'name':name,'provider_type':entry['code'],'account_type':plan_name,
                         'protocol':'anthropic' if route=='anthropic-messages' else 'openai',
-                        'protocol_type':'text','protocol_config':{route:{'path_prefix':'','auth_type':'x-api-key' if route=='anthropic-messages' else 'bearer'}},
+                        'protocol_type':'text','protocol_config':configs,
                         'base_url':plan['base_url'],'api_key':'audit-private-key',
                         'priority':0,'max_concurrency':10,'status':'disabled','remark':'isolated catalog regression',
                         'model_mappings':[{'logical_model':model,'upstream_model':'fixture','model_type':'text','status':'enabled'}],
@@ -39,6 +43,11 @@ class ProviderCatalogHTTPTests(unittest.IsolatedAsyncioTestCase):
                     for field in ('base_url','priority','max_concurrency','account_type','status','default_test_model','remark'):
                         self.assertEqual(saved[field],payload[field])
                     self.assertTrue(saved['has_api_key']);self.assertNotIn('audit-private-key',str(saved))
+                    self.assertEqual(saved['protocol_config'],configs)
+                    stale=await client.patch(f'/api/admin/providers/{ident}',json={'status':'enabled','expected_config_version':saved['config_version']+1})
+                    self.assertEqual(stale.status_code,409)
+                    enabled=await client.patch(f'/api/admin/providers/{ident}',json={'status':'enabled','expected_config_version':saved['config_version']})
+                    self.assertEqual(enabled.status_code,200)
                     for field,value in [('max_concurrency',0),('priority',-1),('proxy','http://proxy.example/path'),('default_test_model','missing-model')]:
                         invalid=await client.patch(f'/api/admin/providers/{ident}',json={field:value})
                         self.assertEqual(invalid.status_code,422)
