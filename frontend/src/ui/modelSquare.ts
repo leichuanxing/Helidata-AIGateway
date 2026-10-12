@@ -1,8 +1,8 @@
 export type CatalogModel={logical_model:string;model_type:string;position:number;configured:boolean;virtual:boolean}
 export type CatalogGroup={id:number;name:string;description:string;models:CatalogModel[]}
-export type ModelCategory='all'|'text'|'image'|'vector'|'rerank'
+export type ModelCategory='all'|'text'|'multimodal'|'image'|'vector'|'rerank'
 export function category(type:string):Exclude<ModelCategory,'all'>{
-  return type==='image'?'image':type==='rerank'?'rerank':type==='embedding'?'vector':'text'
+  return type==='multimodal'?'multimodal':type==='image'?'image':type==='rerank'?'rerank':type==='embedding'?'vector':'text'
 }
 export function squareModels(groups:CatalogGroup[]):CatalogModel[]{
   const models=new Map<string,CatalogModel>()

@@ -7,8 +7,8 @@ import {category,squareModels,filterModels,pageModels,type CatalogModel,type Cat
 const apiBase=computed(()=>branding.public_api_base_url||window.location.origin+'/v1')
 const groups=ref<CatalogGroup[]>([]),error=ref(''),loading=ref(false),q=ref(''),type=ref<ModelCategory>('all'),page=ref(1),pageSize=ref(20)
 const documentation=ref(false),example=ref(''),exampleModel=ref('')
-const categories=[{value:'all',label:'所有'},{value:'text',label:'文本'},{value:'image',label:'文生图'},{value:'vector',label:'向量'},{value:'rerank',label:'重排序'}] as const
-const labels={text:'文本',image:'文生图',vector:'向量',rerank:'重排序'}
+const categories=[{value:'all',label:'所有'},{value:'text',label:'文本'},{value:'multimodal',label:'多模态'},{value:'image',label:'文生图'},{value:'vector',label:'向量'},{value:'rerank',label:'重排序'}] as const
+const labels={text:'文本',multimodal:'多模态',image:'文生图',vector:'向量',rerank:'重排序'}
 const models=computed(()=>squareModels(groups.value)),filtered=computed(()=>filterModels(models.value,type.value,q.value))
 const paged=computed(()=>pageModels(filtered.value,page.value,pageSize.value))
 watch([q,type,pageSize],()=>{page.value=1})
