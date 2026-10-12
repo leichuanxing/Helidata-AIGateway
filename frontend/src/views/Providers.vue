@@ -14,7 +14,7 @@ const category=ref(''),testDialog=ref(false),testAccount=ref<Provider|null>(null
 const visibleColumns=ref(['models','priority','concurrency','health','latency','key'])
 const columnOptions={models:'模型',priority:'优先级',concurrency:'最大并发',health:'健康 / 调度',latency:'最近延迟',key:'Key'}
 const plans=computed(()=>selectedType.value?.account_types||{standard:{name:form.provider_type==='zhipu_coding_plan'?'Coding Plan':'标准账号',base_url:selectedType.value?.base_url||''}})
-const manualProtocols=computed(()=>form.provider_type==='custom_openai')
+const manualProtocols=computed(()=>['custom_openai','vllm','sglang','ollama'].includes(form.provider_type))
 const preset=computed(()=>accountPreset(selectedType.value,form.account_type))
 const availableCategories=computed(()=>Object.entries(categoryLabels).filter(([k])=>k!=='mixed'&&categoryProtocols(selectedType.value,form.account_type,k).length>0))
 const availableProtocols=computed(()=>categoryProtocols(selectedType.value,form.account_type,form.protocol_type))
