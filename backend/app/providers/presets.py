@@ -18,9 +18,9 @@ def enrich(catalog):
         'zhipu_coding_plan':('https://open.bigmodel.cn/api/coding/paas/v4',[CHAT,RESPONSES,MESSAGES],'https://docs.bigmodel.cn/cn/coding-plan/tool/others'),
         'anthropic':('https://api.anthropic.com/v1',[MESSAGES],'https://platform.claude.com/docs/en/api/overview'),
         'aliyun':('https://dashscope.aliyuncs.com/compatible-mode/v1',[CHAT,EMBEDDINGS],'https://help.aliyun.com/zh/model-studio/base-url'),
-        'vllm':('http://127.0.0.1:8000/v1',[CHAT,EMBEDDINGS],'https://docs.vllm.ai/en/latest/serving/openai_compatible_server/'),
-        'sglang':('http://127.0.0.1:30000/v1',[CHAT,EMBEDDINGS],'https://docs.sglang.io/docs/basic_usage/send_request'),
-        'ollama':('http://127.0.0.1:11434/v1',[CHAT,EMBEDDINGS],'https://docs.ollama.com/api/openai-compatibility'),
+        'vllm':('http://127.0.0.1:8000/v1',[CHAT,RESPONSES,MESSAGES,EMBEDDINGS],'https://docs.vllm.ai/en/latest/serving/openai_compatible_server/'),
+        'sglang':('http://127.0.0.1:30000/v1',[CHAT,RESPONSES,MESSAGES,EMBEDDINGS],'https://docs.sglang.io/docs/basic_usage/send_request'),
+        'ollama':('http://127.0.0.1:11434/v1',[CHAT,RESPONSES,MESSAGES,EMBEDDINGS],'https://docs.ollama.com/api/openai-compatibility'),
         'custom_openai':('http://127.0.0.1:8000/v1',[CHAT,RESPONSES,MESSAGES,EMBEDDINGS,IMAGES,'openai-rerank'],'https://platform.openai.com/docs/api-reference'),
         'tencent':('https://tokenhub.tencentmaas.com/v1',[CHAT,RESPONSES,MESSAGES],'https://cloud.tencent.com/document/product/1823/130078'),
         'baidu':('https://qianfan.baidubce.com/v2',[CHAT],'https://cloud.baidu.com/doc/qianfan/s/imlg0beiu'),
@@ -78,4 +78,5 @@ def enrich(catalog):
     plan('opencode','go','https://opencode.ai/zen/go/v1')
     plan('opencode','zen','https://opencode.ai/zen/v1')
     catalog['opencode']['description']='不同模型使用 Chat、Responses 或 Messages 协议；请按官方模型端点表选择。Go 与 Zen 的地址、Key 和计费方式不同。'
+    catalog['ollama']['operations']=['chat','messages','responses','embeddings']
     catalog['ollama']['description']+=' 当前新增账号使用 OpenAI 兼容 /v1 端点；原生 /api 协议不用于新增生成账号。'
