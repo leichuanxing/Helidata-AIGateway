@@ -40,7 +40,7 @@ class GatewayStreamingResponse(StreamingResponse):
                     yield frame('[DONE]')
                     return
                 decoded = json.loads(data)
-                if isinstance(decoded, dict) and 'error' in decoded:
+                if isinstance(decoded, dict) and decoded.get('error') is not None:
                     raise ProviderFailure('UPSTREAM_STREAM_ERROR')
                 ChatCompletionChunk.model_validate(decoded)
                 from app.gateway.quota import observe

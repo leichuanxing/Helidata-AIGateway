@@ -28,7 +28,7 @@ class ProtocolStreamingResponse(GatewayStreamingResponse):
                     data='[DONE]';final=True;content=False;usage={}
                 else:
                     data=json.loads(raw)
-                    if not isinstance(data,dict) or 'error' in data:raise ProviderFailure('UPSTREAM_STREAM_ERROR')
+                    if not isinstance(data,dict) or data.get('error') is not None:raise ProviderFailure('UPSTREAM_STREAM_ERROR')
                     if wire=='responses' and data.get('type')=='response.failed' and isinstance(data.get('response'),dict):
                         observe(self.ctx,{'usage':normalized(wire,data['response'])})
                     if reader:final,content,usage=reader.read(event,data)
