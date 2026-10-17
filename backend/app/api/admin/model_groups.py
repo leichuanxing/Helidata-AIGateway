@@ -1,10 +1,10 @@
 from fastapi import APIRouter,Depends,Query,Request
-from sqlalchemy import select,delete,func
+from sqlalchemy import select,delete,func,text
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_session
 from app.core.dependencies import administrator
 from app.core.exceptions import APIError
-from app.models.user import ModelGroup,ModelGroupModel,LogicalModel,UserGroupModelGroup
+from app.models.user import ModelGroup,ModelGroupModel,LogicalModel,UserGroupModelGroup,Provider,ProviderModelMapping
 from app.schemas.models import ModelGroupInput,protocol_category
 from app.api.admin.model_mappings import config_lock
 from app.services.sessions import audit
@@ -13,7 +13,7 @@ router=APIRouter(prefix='/api/admin/model-groups',tags=['模型组'])
 
 async def group_data(db,row):
     members=(await db.scalars(select(ModelGroupModel.logical_model).where(ModelGroupModel.model_group_id==row.id).order_by(ModelGroupModel.position))).all()
-    return {**{f:getattr(row,f) for f in ('id','name','description','status','protocol_type','created_at')},'logical_models':list(members)}
+    return {**{f:getattr(row,f) for f in ('id','name','description','status','protocol_type','created_at','balancing_strategy','max_retries','attempt_timeout','retry_uncertain','node_weights')},'logical_models':list(members)}
 
 
 @router.get('')
@@ -39,9 +39,50 @@ async def detail(group_id: int,actor=Depends(administrator),db=Depends(get_sessi
     return {'data':await group_data(db,await target(db,group_id))}
 
 
+@router.get('/{group_id}/nodes')
+async def nodes(group_id:int,hours:int=Query(24,ge=1,le=168),actor=Depends(administrator),db=Depends(get_session)):
+    row=await target(db,group_id)
+    members=select(ModelGroupModel.logical_model).where(ModelGroupModel.model_group_id==group_id)
+    pairs=(await db.execute(select(ProviderModelMapping,Provider).join(Provider).where(
+        ProviderModelMapping.logical_model.in_(members),ProviderModelMapping.deleted_at.is_(None),Provider.deleted_at.is_(None)
+    ).order_by(Provider.id,ProviderModelMapping.id))).all()
+    from app.gateway.provider_concurrency import loads
+    from app.gateway.provider_health import state
+    counts=await loads([p for m,p in pairs])
+    # Historical attempts include failed nodes, unlike the final provider_id column.
+    stats=(await db.execute(text("""
+        SELECT a->>'provider_id' AS provider_id,a->>'logical_model' AS logical_model,
+          count(*) AS requests,count(*) FILTER (WHERE a->>'status'='success') AS successes,
+          avg(CASE WHEN jsonb_typeof(a->'elapsed_ms')='number' THEN (a->>'elapsed_ms')::double precision END) AS avg_ms
+        FROM call_logs l CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(l.trace->'attempts')='array' THEN l.trace->'attempts' ELSE '[]'::jsonb END) a
+        WHERE l.created_at>=now()-(:hours * interval '1 hour')
+          AND a->>'status' IN ('success','failure','client_cancelled')
+          AND a->>'elapsed_ms' IS NOT NULL
+          AND (a->>'logical_model') IN (SELECT logical_model FROM model_group_models WHERE model_group_id=:group_id)
+        GROUP BY a->>'provider_id',a->>'logical_model'
+    """),{'hours':hours,'group_id':group_id})).mappings().all()
+    metrics={(r['provider_id'],r['logical_model']):r for r in stats}
+    items=[]
+    for m,p in pairs:
+        stat=metrics.get((str(p.id),m.logical_model),{})
+        requests=stat.get('requests',0);successes=stat.get('successes',0)
+        items.append({'mapping_id':m.id,'provider_id':p.id,'provider_name':p.name,'logical_model':m.logical_model,
+            'upstream_model':m.upstream_model,'mapping_status':m.status,'status':p.status,'health':state(p),
+            'weight':(row.node_weights or {}).get(str(p.id),1),'priority':p.priority,'max_concurrency':p.max_concurrency,
+            'current_concurrency':counts[p.id],'failure_count':p.failure_count,'cooldown_until':p.cooldown_until,
+            'last_error_code':p.last_error_code,'requests':requests,'success_rate':round(successes/requests*100,2) if requests else None,
+            'average_latency_ms':round(stat['avg_ms'],2) if stat.get('avg_ms') is not None else None})
+    return {'data':{'items':items,'hours':hours,'strategy':row.balancing_strategy}}
+
+
 async def save(db,actor,request,body,row=None):
     referenced=False
     names=body.logical_models
+    if body.node_weights:
+        valid=set(str(x) for x in (await db.scalars(select(ProviderModelMapping.provider_id).join(Provider).where(
+            ProviderModelMapping.logical_model.in_(names),ProviderModelMapping.deleted_at.is_(None),Provider.deleted_at.is_(None)))).all())
+        if set(body.node_weights)-valid:raise APIError(422,'INVALID_BALANCING_NODE','权重只能配置当前模型组已有的供应商节点')
     found={m.name:m for m in (await db.scalars(select(LogicalModel).where(LogicalModel.name.in_(names)))).all()}
     category=body.protocol_type
     if category is None:
