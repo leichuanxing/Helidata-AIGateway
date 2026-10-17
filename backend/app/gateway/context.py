@@ -22,6 +22,7 @@ class GatewayContext:
     admission: object = None
     request: object = None
     quota_usage: int | None = None
+    upstream_not_processed: bool = False
     usage_snapshot: dict = field(default_factory=dict)
     upstream_started: float | None = None
     upstream_elapsed_ms: float | None = None

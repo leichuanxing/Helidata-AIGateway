@@ -25,6 +25,8 @@ class BalancingHTTPTests(unittest.IsolatedAsyncioTestCase):
                 if mode=='auth':return self.answer(401,{'error':{'message':'fixture auth'}})
                 if mode=='rate':return self.answer(429,{'error':{'message':'fixture rate'}})
                 if mode=='error':return self.answer(503,{'error':{'message':'fixture unavailable'}})
+                if self.path.endswith('/embeddings'):
+                    return self.answer(200,{'object':'list','model':node,'data':[{'object':'embedding','index':0,'embedding':[1.0,0.0]}],'usage':{'prompt_tokens':1,'total_tokens':1}})
                 if mode=='stall':time.sleep(1.3)
                 if mode=='slow':
                     with lock:active[node]=active.get(node,0)+1;peak[node]=max(peak.get(node,0),active[node])
@@ -128,6 +130,33 @@ class BalancingHTTPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(all(n['current_concurrency']==0 for n in metrics['items']))
                     self.assertTrue(all(n['requests']>0 and n['average_latency_ms'] is not None for n in metrics['items']))
                     self.assertEqual((await management('GET',group_path))['balancing_strategy'],'least_concurrency')
+                    embedding=model+'-embed'
+                    await management('POST','admin/providers',{'name':embedding,'provider_type':'custom_openai','protocol':'openai','protocol_type':'vector',
+                        'base_url':f'http://127.0.0.1:{server.server_port}/v1','api_key':'fixture-only',
+                        'protocol_config':{'openai-embeddings':{'path_prefix':''}},
+                        'model_mappings':[{'logical_model':embedding,'upstream_model':'vector','model_type':'embedding'}]},201)
+                    complex_group=await management('POST','admin/model-groups',{**group_body,'name':model+'-complex','balancing_strategy':'weighted_round_robin'},201)
+                    virtual=model+'-virtual'
+                    await management('POST','admin/smart-route/configs',{'virtual_model':virtual,'embedding_model':embedding,
+                        'simple_model_group':group['id'],'complex_model_group':complex_group['id'],'status':'enabled'},201)
+                    routed=await client.post('/v1/chat/completions',json={'model':virtual,'messages':[{'role':'user','content':'hello'}],'max_tokens':8})
+                    self.assertEqual(routed.status_code,200,routed.text[:200])
+                    routed_log=await terminal_log(routed.headers['x-request-id'])
+                    self.assertEqual(routed_log['trace']['attempts'][-1]['balancing_strategy'],'least_concurrency')
+                    self.assertEqual(routed_log['trace']['attempts'][-1]['model_group_id'],group['id'])
+                    self.assertTrue(routed_log['trace']['smart_routing']['embedding_request_id'])
+                    fallback=model+'-fallback'
+                    await management('POST','admin/providers',{'name':fallback,'provider_type':'custom_openai','protocol':'openai','protocol_type':'text',
+                        'base_url':f'http://127.0.0.1:{server.server_port}/v1','api_key':'fixture-only',
+                        'protocol_config':{'openai-completions':{'path_prefix':''}},
+                        'model_mappings':[{'logical_model':fallback,'upstream_model':'c','model_type':'text'}]},201)
+                    group_body.update(logical_models=[model,fallback],max_retries=2);await management('PUT',group_path,group_body)
+                    policy=await management('POST','admin/compliance/policies',{'name':fallback,'status':'enabled','action':'block','models':[fallback]})
+                    await management('POST','admin/compliance/words',{'pattern':'hello','policy_id':policy['id']})
+                    modes.update(a='auth',b='auth');start=len(calls);blocked=await chat()
+                    self.assertEqual(blocked.status_code,403);self.assertEqual(blocked.json()['error']['code'],'CONTENT_BLOCKED')
+                    self.assertEqual(len(calls)-start,2);self.assertNotIn('c',[x[0] for x in calls[start:]])
+                    metrics=await management('GET',group_path+'/nodes');self.assertTrue(all(n['current_concurrency']==0 for n in metrics['items']))
                     print('PASS load balancing HTTP: RR/1:3 WRR, 3 protocols JSON+SSE, auth failover, probe recovery, uncertain-error guard, broken-stream guard, 8 concurrent requests, metrics persistence')
         finally:
             server.shutdown();server.server_close()

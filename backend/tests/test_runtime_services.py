@@ -108,3 +108,31 @@ class RuntimeServicesTests(unittest.IsolatedAsyncioTestCase):
             if ident:
                 async with factory.begin() as db:await db.execute(delete(UserGroup).where(UserGroup.id==ident))
             await engine.dispose()
+
+    async def test_known_unsent_failure_releases_budget_but_uncertain_failure_keeps_it(self):
+        from app.gateway import quota
+        from app.models.user import UserGroup
+        from app.models.quota import QuotaBucket
+        engine=create_async_engine(get_settings().database.url(),poolclass=NullPool)
+        factory=async_sessionmaker(engine,expire_on_commit=False)
+        ident=None
+        try:
+            async with factory.begin() as db:
+                group=UserGroup(name=self.prefix,quota_limit=200,quota_period='permanent');db.add(group);await db.flush();ident=group.id
+            ctx=GatewayContext('req_'+uuid4().hex,'chat',payload={'max_tokens':100});ctx.group=group;ctx.adapter=SimpleNamespace(http_status=None)
+            with patch.object(quota,'session_factory',factory):
+                ctx.upstream_not_processed=True
+                async with quota.acquire(ctx):
+                    self.assertFalse(ctx.upstream_not_processed,'each attempt resets certainty')
+                    ctx.upstream_not_processed=True
+                async with factory() as db:
+                    bucket=await db.get(QuotaBucket,(ident,'permanent','all'))
+                    self.assertEqual(bucket.unreported_budget,0);self.assertEqual(bucket.reserved_budget,0)
+                async with quota.acquire(ctx):pass
+                async with factory() as db:
+                    bucket=await db.get(QuotaBucket,(ident,'permanent','all'))
+                    self.assertGreater(bucket.unreported_budget,0);self.assertEqual(bucket.reserved_budget,0)
+        finally:
+            if ident:
+                async with factory.begin() as db:await db.execute(delete(UserGroup).where(UserGroup.id==ident))
+            await engine.dispose()

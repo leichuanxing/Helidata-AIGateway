@@ -51,6 +51,7 @@ async def execute(request,ctx,resources):
     tried=set(); last=None
     sent=0
     policy=None
+    deadline=asyncio.timeout(REQUEST_TIMEOUT if REQUEST_TIMEOUT!=120 else get_settings().gateway.nonstream_timeout)
     async def send(stream,attempt):
         try:
             async with asyncio.timeout(policy['attempt_timeout']):
@@ -89,7 +90,7 @@ async def execute(request,ctx,resources):
                     if last:raise last
                     break
                 tried.add(mapping.id);ctx.mapping,ctx.provider=mapping,provider
-                if ctx.route_config_id and mapping.logical_model!=ctx.logical_model:
+                if mapping.logical_model!=ctx.logical_model:
                     # Failover within the selected group must not bypass its model policies.
                     from app.gateway import compliance
                     async with session_factory() as db:
@@ -141,6 +142,7 @@ async def execute(request,ctx,resources):
                     code=error.detail['code']
                     entry['status']='client_cancelled' if code=='CLIENT_DISCONNECTED' else 'failure'
                     entry['code']=code;entry['http_status']=getattr(error,'upstream_status',None)
+                    ctx.upstream_not_processed=getattr(error,'safe_to_retry',False)
                     if code=='PROVIDER_BUSY': continue
                     if code=='CLIENT_DISCONNECTED': raise
                     await provider_health.finish(ctx,'failure',code)
@@ -151,8 +153,12 @@ async def execute(request,ctx,resources):
                     last=error
                 except BaseException as error:
                     finish_timing(entry)
-                    entry['status']='client_cancelled' if isinstance(error,asyncio.CancelledError) else 'failure'
-                    entry['code']='CLIENT_DISCONNECTED' if isinstance(error,asyncio.CancelledError) else 'INTERNAL_ERROR'
+                    timed_out=isinstance(error,asyncio.CancelledError) and deadline.expired()
+                    sent_upstream=entry['status']=='started'
+                    entry['status']='failure' if timed_out else 'client_cancelled' if isinstance(error,asyncio.CancelledError) else 'failure'
+                    entry['code']='UPSTREAM_TIMEOUT' if timed_out else 'CLIENT_DISCONNECTED' if isinstance(error,asyncio.CancelledError) else 'INTERNAL_ERROR'
+                    if timed_out and sent_upstream:
+                        with anyio.CancelScope(shield=True):await provider_health.finish(ctx,'failure','UPSTREAM_TIMEOUT')
                     raise
                 finally:
                     with anyio.CancelScope(shield=True): await attempt.aclose()
@@ -167,9 +173,6 @@ async def execute(request,ctx,resources):
         if last: raise last
         raise APIError(503,'NO_AVAILABLE_PROVIDER','账号当前并发已满或不可用')
     try:
-        async with asyncio.timeout(REQUEST_TIMEOUT if REQUEST_TIMEOUT!=120 else get_settings().gateway.nonstream_timeout): return await attempts()
+        async with deadline:return await attempts()
     except TimeoutError:
-        if ctx.attempts:
-            ctx.attempts[-1]['status']='failure';ctx.attempts[-1]['code']='UPSTREAM_TIMEOUT'
-        await provider_health.finish(ctx,'failure','UPSTREAM_TIMEOUT')
         raise APIError(504,'UPSTREAM_TIMEOUT','上游调用超过调度总期限') from None

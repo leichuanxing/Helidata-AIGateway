@@ -56,7 +56,7 @@ class BaseProvider(ABC):
         except ProviderFailure:
             raise
         except (PoolCapacityError,httpx.PoolTimeout):
-            raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED') from None
+            raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED',safe_to_retry=True) from None
         except (httpx.ConnectError,httpx.ConnectTimeout) as error:
             raise ProviderFailure('UPSTREAM_TIMEOUT' if isinstance(error,httpx.ConnectTimeout) else 'UPSTREAM_NETWORK_ERROR',safe_to_retry=True) from None
         except httpx.TimeoutException:
@@ -77,7 +77,7 @@ class BaseProvider(ABC):
                 raise ProviderFailure('UPSTREAM_AUTH_FAILED' if response.status_code in (401,403) else 'UPSTREAM_HTTP_ERROR',response.status_code)
             if response.headers.get('content-type','').split(';')[0].strip().lower()!='text/event-stream':raise ProviderFailure('UPSTREAM_INVALID_RESPONSE',response.status_code)
             return response
-        except (PoolCapacityError,httpx.PoolTimeout):raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED') from None
+        except (PoolCapacityError,httpx.PoolTimeout):raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED',safe_to_retry=True) from None
         except (httpx.ConnectError,httpx.ConnectTimeout) as error:
             raise ProviderFailure('UPSTREAM_TIMEOUT' if isinstance(error,httpx.ConnectTimeout) else 'UPSTREAM_NETWORK_ERROR',safe_to_retry=True) from None
         except httpx.TimeoutException:raise ProviderFailure('UPSTREAM_TIMEOUT') from None
