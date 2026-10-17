@@ -2,7 +2,7 @@
 
 合力数据 AI 网关（HeliData AI Gateway）用于集中管理模型供应商、模型授权、智能路由、内容合规和网关访问安全，并提供对话测试、用量分析与调用日志。
 
-**当前版本：v1.0.7** · **数据库迁移：0031**
+**当前版本：v1.0.8** · **数据库迁移：0031**
 
 ## 核心功能
 
@@ -20,16 +20,18 @@
 | 网关安全 | IP、管理后台和 API 访问控制、API Key IP 绑定、限流、登录保护、IP 封禁、可信代理、安全日志 |
 | 系统设置 | 品牌、运行参数、显示时区、向量服务、Elasticsearch、系统资源与组件状态、备份 |
 
-支持 OpenAI 兼容接口与 Anthropic Messages。对话、向量、重排、图像生成和多模态能力取决于上游模型、供应商与协议的实际支持。
+提供 OpenAI Chat Completions、Responses、Anthropic Messages 等接口。对话、向量、重排、图像生成和多模态能力取决于上游模型、供应商与协议的实际支持。
 
-## v1.0.7 更新
+## v1.0.8 更新
 
-- 网关安全采用八个独立功能标签，支持当前标签独立保存与撤销、跨标签保留草稿、地址批量添加和规范化、安全日志筛选与详情。
-- 对话参数使用紧凑布局，会话说明可折叠；默认输出上限 **5000 Token**，可手动设置为 1–65535 Token。
-- 多模态内容合规仅审核文字；图片及 PDF 等附件原样传递给上游。文本附件读取后的文字仍参与审核。
-- 统一智能路由与内容合规页面风格；系统设置支持时区下拉选择，性能参数标注单位。
+- 模型供应商补充默认地址、图标与套餐配置；普通供应商自动匹配协议，Custom OpenAI、vLLM、SGLang、Ollama 可手动选择协议。
+- 自部署供应商可选择 `openai-completions`、`openai-responses`、`anthropic-messages`；仅选择上游实际支持的协议。普通供应商的独立协议地址由系统维护，表单不再重复展示。
+- 优化对话测试的双栏布局、参数对齐、消息间距与附件显示；默认输出上限仍为 **5000 Token**，附件合计不超过 **3 MiB**。
+- 修复用户模型广场将多模态误显示为文本的问题，新增独立的多模态筛选。
+- 修复供应商批量测试交互及代理等待时间，防止更换供应商时误用原供应商凭据。
+- 修复 SSE 将 `error: null` 误判为失败的问题，真实错误仍安全阻断且不泄露上游正文。
 
-详细变更见 [v1.0.7 发布记录](docs/release-v1.0.7.md)。
+详细变更见 [v1.0.8 发布记录](docs/release-v1.0.8.md)，检查范围与遗留风险见 [代码安全审计](docs/code-audit-2026-10-15.md)。源码发布、生产部署和离线包分别管理，本次版本发布不代表生产容器或旧安装包已升级。
 
 ## 应用截图
 
@@ -41,7 +43,11 @@
 
 ### 对话测试
 
-![对话测试与紧凑参数区](pic/chat-test-v1.0.7.png)
+![对话测试与紧凑参数区](pic/chat-test-v1.0.8.png)
+
+### 用户模型广场
+
+![多模态模型筛选](pic/model-square-v1.0.8.png)
 
 ### 模型供应商
 
@@ -85,9 +91,9 @@
 ```bash
 git clone https://github.com/leichuanxing/Helidata-AIGateway.git /opt/AIGateway
 cd /opt/AIGateway
-git checkout v1.0.7
+git checkout v1.0.8
 python3 docker/fetch_compliance_model.py
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.7 .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.8 .
 ./start.sh
 curl -fsS http://127.0.0.1:18080/health
 ```
@@ -109,22 +115,22 @@ docker exec -u root helidata-ai-gateway rm /data/config/initial-admin-password.t
 先构建对应版本的基础镜像，再制作离线镜像和安装包：
 
 ```bash
-docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.7 .
-docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.7-offline .
+docker build -f docker/Dockerfile -t helidata-ai-gateway:v1.0.8 .
+docker build -f offline/Dockerfile -t helidata-ai-gateway:v1.0.8-offline .
 python3 offline/build_package.py --commit "$(git rev-parse HEAD)"
 ```
 
 将 `releases/` 中的完整安装包复制到目标服务器：
 
 ```bash
-tar -xzf helidata-ai-gateway-v1.0.7-linux-amd64-offline.tar.gz
-cd helidata-ai-gateway-v1.0.7-linux-amd64
+tar -xzf helidata-ai-gateway-v1.0.8-linux-amd64-offline.tar.gz
+cd helidata-ai-gateway-v1.0.8-linux-amd64
 sudo ./deploy-offline.sh
 ```
 
 安装器交互输入数据目录（默认 `/opt/AIGateway/data`）、管理员用户名（默认 `admin`）、两次密码和应用端口，启动后输出登录信息。密码隐藏输入，部署配置不保存明文密码。目标服务器须预装 Docker Engine、Bash、coreutils、findutils 和 util-linux，并使用新的空数据目录。
 
-源码版本与旧离线产物独立：已有包仍保留原版本，v1.0.7 包须按上述命令重新构建。详见 [离线部署说明](offline/README.md)。
+源码版本与旧离线产物独立：已有包仍保留原版本，v1.0.8 包须按上述命令重新构建。详见 [离线部署说明](offline/README.md)。
 
 ## 模型接入与 API
 
@@ -142,7 +148,7 @@ curl "$GATEWAY_BASE/v1/chat/completions" \
   -d '{"model":"已授权的逻辑模型","messages":[{"role":"user","content":"你好"}],"stream":true}'
 ```
 
-供应商凭据加密保存，个人 API Key 完整值仅在创建时显示一次。更多接口见 [API 文档](docs/api.md)。
+供应商凭据加密保存，个人 API Key 完整值仅在创建时显示一次。GLM、Qwen 等模型的推理字段跨协议转换仍有限制，优先使用原生 Chat；配置协议选项不能让上游获得其本身不支持的接口。更多接口见 [API 文档](docs/api.md)。
 
 对话测试使用当前用户的模型权限、配额和合规策略，真实调用可能产生费用。多模态每次最多 4 个附件，合计不超过 3 MiB，支持 PNG、JPEG、GIF、WebP、PDF 和 UTF-8 文本；对话及附件仅保留在当前页面。内容合规不审核图片、音频、视频、PDF、媒体 URL 或文件名；文字匹配和语义审核按已配置策略执行。智能路由样本的上游向量构建也可能产生费用，按需显式执行。
 
@@ -177,5 +183,11 @@ docker exec helidata-ai-gateway alembic current
 - [当前状态](docs/current-status.md)
 - [部署、备份与恢复](docs/deployment.md)
 - [数据库设计](docs/database-design.md)
-- [v1.0.7 发布记录](docs/release-v1.0.7.md)
+- [v1.0.8 发布记录](docs/release-v1.0.8.md)
 - [许可证](LICENSE)
+
+## 质量验证与边界
+
+最近一次代码审计中，后端105项、前端22项、启停脚本14项及7个Shell语法检查通过；48个已安装Python包与npm依赖扫描未命中当时的已知漏洞。该结果不等于没有未知漏洞，亦不覆盖持续压力、生产灾难恢复和全部供应商能力。
+
+生产应部署HTTPS；默认HTTP入口不能保护传输中的密码和API Key。供应商模型能力及价格以官方文档和实际账号配置为准。发布源码前后的验收记录、环境差异及未验证项见 `docs/`。

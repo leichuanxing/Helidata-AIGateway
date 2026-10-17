@@ -66,7 +66,7 @@ async def lifespan(app):
 
 
 
-app=FastAPI(title='合力数据AI网关',version='1.0.7',lifespan=lifespan)
+app=FastAPI(title='合力数据AI网关',version='1.0.8',lifespan=lifespan)
 from app.core.body_limit import BodyLimitMiddleware
 app.add_middleware(BodyLimitMiddleware)
 
