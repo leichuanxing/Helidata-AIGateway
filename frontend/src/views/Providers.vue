@@ -5,7 +5,7 @@ import {api,message} from '../api/client'
 import ProviderMappingEditor from '../components/ProviderMappingEditor.vue'
 import ProviderTestDialog from '../components/ProviderTestDialog.vue'
 import ProviderIdentity from '../components/ProviderIdentity.vue'
-import {accountPreset,categoryProtocols,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../ui/providerPresets'
+import {accountPreset,categoryProtocols,automaticConnection,adaptMappingTypes,mappingType,syncSharedUrls,validServiceUrl,validProxyUrl} from '../ui/providerPresets'
 import type {ProtocolRoute,ProviderDraftMapping} from '../api/provider'
 import {type Provider,type ProviderType,type TestResult,healthLabels,authLabels,schedulingLabels,categoryLabels,protocolNames} from '../api/provider'
 const rows=ref<Provider[]>([]),types=ref<ProviderType[]>([]),page=ref(1),total=ref(0),q=ref(''),status=ref(''),providerType=ref(''),protocol=ref(''),health=ref(''),loading=ref(false),saving=ref(false),error=ref(''),dialog=ref(false),editing=ref<number|null>(null),hasKey=ref(false),testing=ref<number|null>(null),testResult=ref<TestResult|null>(null)
@@ -77,7 +77,7 @@ async function open(p?:Provider&{config_version?:number}){
   editing.value=p?.id??null;editorVersion.value=p?.config_version??null;hasKey.value=p?.has_api_key||false
   Object.assign(form,blank(),p?{name:p.name,provider_type:p.provider_type,protocol:p.protocol,protocol_type:p.protocol_type,account_type:p.account_type,base_url:p.base_url,proxy:p.proxy||'',priority:p.priority,max_concurrency:p.max_concurrency,status:p.status,remark:p.remark,default_test_model:p.default_test_model||''}:{})
   originalProvider.value=p||null;loadProtocols(p);originalProtocols.value=[...selectedProtocols.value]
-  mappings.value=[{logical_model:'',upstream_model:'',model_type:form.protocol_type==='multimodal'?'multimodal':form.protocol_type==='image'?'image':form.protocol_type==='vector'?'embedding':'text',status:'enabled'}];discovered.value=[];mappingsReady.value=!p;dialog.value=true
+  mappings.value=[{logical_model:'',upstream_model:'',model_type:mappingType(form.protocol_type),status:'enabled'}];discovered.value=[];mappingsReady.value=!p;dialog.value=true
   if(p){mappingLoading.value=true;try{const rows=(await api.get('/admin/providers/'+p.id+'/model-mappings')).data.data;if(gen!==openGeneration)return;mappings.value=rows.length?rows.map((m:ProviderDraftMapping)=>({logical_model:m.logical_model,upstream_model:m.upstream_model,model_type:m.model_type,status:m.status})):mappings.value;mappingsReady.value=true}catch(e){if(gen===openGeneration)ElMessage.error(message(e))}finally{if(gen===openGeneration)mappingLoading.value=false}}
 }
 async function discoverDraft(){
@@ -115,7 +115,7 @@ async function save(){
   if(mappings.value.some(m=>! /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,99}$/.test(m.logical_model.trim()))){ElMessage.error('请求模型名称须以字母或数字开头，只能包含字母、数字、点、下划线、冒号、斜杠或连字符');return}
   if(new Set(mappings.value.map(m=>m.logical_model.trim())).size!==mappings.value.length){ElMessage.error('请求模型名称不能重复');return}
   const categoryOf=(t:string)=>t==='image'?'image':['embedding','rerank'].includes(t)?'vector':'text'
-  if(form.protocol_type&&mappings.value.some(m=>(form.protocol_type==='multimodal'?m.model_type:categoryOf(m.model_type))!==form.protocol_type)){ElMessage.error('模型映射类型须与账号协议类型一致');return}
+  if(form.protocol_type&&mappings.value.some(m=>((form.protocol_type==='multimodal'||form.protocol_type==='rerank')?m.model_type:categoryOf(m.model_type))!==form.protocol_type)){ElMessage.error('模型映射类型须与账号协议类型一致');return}
   saving.value=true
   try{
     const payload:any={name:form.name,provider_type:form.provider_type,protocol_type:form.protocol_type,account_type:form.account_type,...connectionConfig(),base_url:connectionBaseUrl(),proxy:form.proxy.trim()||null,priority:form.priority,max_concurrency:form.max_concurrency,status:form.status,remark:form.remark,default_test_model:form.default_test_model||null,model_mappings:mappings.value.map(m=>({...m,logical_model:m.logical_model.trim(),upstream_model:m.upstream_model.trim()}))}

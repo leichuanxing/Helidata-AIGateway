@@ -7,7 +7,7 @@ export function accountPreset(type:ProviderType|undefined,plan:string){
 
 export function categoryProtocols(type:ProviderType|undefined,plan:string,category:string|null){
   const supported=accountPreset(type,plan).supported_protocols||['openai-completions','openai-responses','anthropic-messages','openai-embeddings','openai-images','openai-rerank','ollama']
-  const options=category==='image'?['openai-images']:category==='vector'?['openai-embeddings','openai-rerank']:['openai-completions','openai-responses','anthropic-messages','ollama']
+  const options=category==='rerank'?['openai-rerank']:category==='image'?['openai-images']:category==='vector'?['openai-embeddings','openai-rerank']:['openai-completions','openai-responses','anthropic-messages','ollama']
   return options.filter(p=>supported.includes(p))
 }
 
@@ -20,7 +20,7 @@ export function automaticConnection(type:ProviderType|undefined,plan:string,cate
   return {selected,urls,routes,separate}
 }
 
-export function mappingType(category:string|null){return category==='multimodal'?'multimodal':category==='image'?'image':category==='vector'?'embedding':'text'}
+export function mappingType(category:string|null){return category==='rerank'?'rerank':category==='multimodal'?'multimodal':category==='image'?'image':category==='vector'?'embedding':'text'}
 export function syncSharedUrls(urls:Record<string,string>,previous:string,value:string){
   for(const protocol of Object.keys(urls))if(urls[protocol]===previous)urls[protocol]=value
 }

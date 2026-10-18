@@ -138,11 +138,17 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     for kind,category,protocol,path,payload in (
                         ('multimodal','multimodal','openai-completions','/v1/chat/completions',{'messages':[{'role':'user','content':[{'type':'text','text':'describe'},{'type':'image_url','image_url':{'url':'https://fixture.invalid/image.png'}}]}],'max_tokens':8}),
                         ('embedding','vector','openai-embeddings','/v1/embeddings',{'input':'hello'}),
-                        ('rerank','vector','openai-rerank','/v1/rerank',{'query':'q','documents':['doc']}),
+                        ('rerank','rerank','openai-rerank','/v1/rerank',{'query':'q','documents':['doc']}),
                         ('image','image','openai-images','/v1/images/generations',{'prompt':'a mountain'})):
                         p=await api('POST','admin/providers',{'name':prefix+kind,'provider_type':'custom_openai','protocol':'openai','protocol_type':category,
                             'base_url':f'http://127.0.0.1:{server.server_port}/v1','api_key':'fixture-only','protocol_config':{protocol:{}},
                             'model_mappings':[{'logical_model':prefix+kind,'upstream_model':kind,'model_type':kind}]},201)
+                        if kind=='rerank':
+                            self.assertEqual(p['protocol_type'],'rerank')
+                            saved=await api('PATCH',f"admin/providers/{p['id']}",{'remark':'rerank category regression','expected_config_version':p['config_version']})
+                            self.assertEqual(saved['protocol_type'],'rerank')
+                            found=await api('GET','admin/providers?protocol_type=rerank&q='+prefix)
+                            self.assertIn(p['id'],[item['id'] for item in found['items']])
                         mid=(await api('GET',f"admin/providers/{p['id']}/model-mappings"))[0]['id']
                         other=await api('POST','admin/balance-routes',{'name':prefix+kind,'model_name':prefix+'-route-'+kind,'model_type':kind,'nodes':[{'mapping_id':mid}],'health_interval':3600},201)
                         result=await client.post(path,json={'model':other['model_name'],**payload});self.assertEqual(result.status_code,200,result.text[:200])

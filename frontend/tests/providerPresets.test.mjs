@@ -47,6 +47,15 @@ test('category changes keep names and status while adapting every mapping type',
     adaptMappingTypes(rows,category);assert.equal(rows[0].model_type,expected);assert.equal(rows[0].logical_model,'a');assert.equal(rows[0].status,'enabled')
   }
 })
+
+test('reranking has a dedicated wire protocol and mapping type',()=>{
+  const type={supported_protocols:['openai-completions','openai-embeddings','openai-rerank']}
+  assert.deepEqual(categoryProtocols(type,'standard','rerank'),['openai-rerank'])
+  assert.deepEqual(categoryProtocols({supported_protocols:['openai-completions']},'standard','rerank'),[])
+  const rows=[{logical_model:'rank',upstream_model:'rank-upstream',model_type:'embedding',status:'enabled'}]
+  adaptMappingTypes(rows,'rerank');assert.equal(rows[0].model_type,'rerank')
+  adaptMappingTypes(rows,'vector');assert.equal(rows[0].model_type,'rerank') // Existing vector accounts remain compatible.
+})
 test('complete API base URLs reject endpoints and unsafe input',()=>{
   for(const value of ['https://example.com/v1','http://127.0.0.1:11434','https://example.com/api/coding/paas/v4'])assert.equal(validServiceUrl(value),true)
   for(const value of ['','ftp://example.com','https://user:secret@example.com','https://example.com?key=secret','https://example.com/v1/messages','https://example.com/v1/chat/completions','https://example.com/v1/responses','https://example.com/api/tags','https://example.com/a b'])assert.equal(validServiceUrl(value),false,value)

@@ -50,6 +50,10 @@ async def target(db,provider_id,lock=False):
 
 
 def validate_input(body,has_key):
+    if body.protocol_type=='rerank':
+        from app.providers.operations import compatible
+        if not compatible('rerank',body):
+            raise APIError(422,'PROVIDER_PROTOCOL_MISMATCH','当前供应商或协议不支持重排序，请使用支持 openai-rerank 的自定义服务')
     plans=PROVIDER_TYPES[body.provider_type].get('account_types',{'standard':{'name':'标准账号'}})
     if body.account_type not in plans:raise APIError(422,'PROVIDER_ACCOUNT_TYPE_MISMATCH','供应商与账号类型不匹配')
     if body.protocol_config is None and body.protocol not in PROVIDER_TYPES[body.provider_type]['protocols']:
@@ -121,7 +125,7 @@ async def discover_draft(body: ProviderDiscovery,request: Request,actor=Depends(
 
 
 @router.get('')
-async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=100),status: str=Query('',max_length=20),provider_type: str=Query('',max_length=40),protocol: str=Query('',max_length=40),health_status: str=Query('',max_length=20),protocol_type: Literal['','text','multimodal','image','vector']=''):
+async def listing(actor=Depends(administrator),db=Depends(get_session),page: int=Query(1,ge=1),page_size: int=Query(20,ge=1,le=100),q: str=Query('',max_length=100),status: str=Query('',max_length=20),provider_type: str=Query('',max_length=40),protocol: str=Query('',max_length=40),health_status: str=Query('',max_length=20),protocol_type: Literal['','text','multimodal','image','vector','rerank']=''):
     query=select(Provider).where(Provider.deleted_at.is_(None))
     if q: query=query.where(or_(Provider.name.icontains(q,autoescape=True),select(ProviderModelMapping.id).where(
         ProviderModelMapping.provider_id==Provider.id,ProviderModelMapping.deleted_at.is_(None),or_(ProviderModelMapping.logical_model.icontains(q,autoescape=True),ProviderModelMapping.upstream_model.icontains(q,autoescape=True))).exists()))
@@ -134,7 +138,7 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),page: int
         query=query.where(or_(and_(or_(Provider.protocol_config.is_(None),func.jsonb_typeof(Provider.protocol_config)=='null'),Provider.protocol==legacy),
             *[Provider.protocol_config.has_key(n) for n in names]))
     if protocol_type:
-        kinds={'text':['text','reasoning'],'multimodal':['multimodal'],'image':['image'],'vector':['embedding','rerank']}[protocol_type]
+        kinds={'text':['text','reasoning'],'multimodal':['multimodal'],'image':['image'],'vector':['embedding','rerank'],'rerank':['rerank']}[protocol_type]
         query=query.where(or_(Provider.protocol_type==protocol_type,and_(Provider.protocol_type.is_(None),select(ProviderModelMapping.id).where(
             ProviderModelMapping.provider_id==Provider.id,ProviderModelMapping.deleted_at.is_(None),ProviderModelMapping.model_type.in_(kinds)).exists())))
     if health_status: query=query.where(Provider.health_status==health_status)

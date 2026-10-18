@@ -71,7 +71,7 @@ class ProviderCreate(BaseModel):
     protocol: Literal['openai','anthropic','ollama']
     base_url: str=Field(min_length=1,max_length=2048)
     protocol_config: dict[ProtocolName,ProtocolRoute] | None=None
-    protocol_type: Literal['text','multimodal','image','vector'] | None=None
+    protocol_type: Literal['text','multimodal','image','vector','rerank'] | None=None
     account_type: str=Field(default='standard',min_length=1,max_length=40,pattern=r'^[a-z_]+$')
     default_test_model: str | None=Field(default=None,min_length=1,max_length=100)
     api_key: SecretStr | None=Field(default=None,max_length=4096)
@@ -139,7 +139,7 @@ class ProviderEdit(BaseModel):
     protocol: Literal['openai','anthropic','ollama'] | None=None
     base_url: str | None=Field(default=None,min_length=1,max_length=2048)
     protocol_config: dict[ProtocolName,ProtocolRoute] | None=None
-    protocol_type: Literal['text','multimodal','image','vector'] | None=None
+    protocol_type: Literal['text','multimodal','image','vector','rerank'] | None=None
     account_type: str | None=Field(default=None,min_length=1,max_length=40,pattern=r'^[a-z_]+$')
     default_test_model: str | None=Field(default=None,min_length=1,max_length=100)
     api_key: SecretStr | None=Field(default=None,max_length=4096)

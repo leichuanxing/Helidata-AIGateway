@@ -9,6 +9,19 @@ from types import SimpleNamespace
 
 
 class ProviderPresetTests(unittest.TestCase):
+    def test_independent_rerank_category_and_legacy_vector(self):
+        from app.services.provider_rules import category_mapping
+        from app.schemas.models import MappingInput
+        base=dict(name='rerank',provider_type='custom_openai',protocol='openai',base_url='http://127.0.0.1:8000/v1',protocol_type='rerank',protocol_config={'openai-rerank':{}})
+        account=ProviderCreate(**base)
+        validate_input(account,False)
+        mapping=MappingInput(logical_model='rank',upstream_model='rank',model_type='rerank')
+        category_mapping(account,mapping)
+        category_mapping(SimpleNamespace(protocol_type='vector'),mapping)
+        with self.assertRaises(APIError):category_mapping(account,MappingInput(logical_model='embed',upstream_model='embed',model_type='embedding'))
+        for changes in ({'provider_type':'openai'},{'protocol_config':{'openai-embeddings':{}}}):
+            with self.assertRaises(APIError):validate_input(ProviderCreate(**{**base,**changes}),True)
+
     def test_every_provider_and_plan_has_valid_address_and_protocols(self):
         self.assertEqual(len(PROVIDER_TYPES),20)
         for code,entry in PROVIDER_TYPES.items():
