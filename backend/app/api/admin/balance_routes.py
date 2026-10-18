@@ -11,6 +11,7 @@ from app.models.user import LogicalModel,ProviderModelMapping,Provider,ModelGrou
 from app.schemas.balance import RouteInput,matching_type
 from app.api.admin.model_mappings import config_lock
 from app.services.sessions import audit
+from app.services.balance_capabilities import operation_for
 
 router=APIRouter(prefix='/api/admin/balance-routes',tags=['负载均衡路由'])
 
@@ -27,7 +28,8 @@ async def options(actor=Depends(administrator),db=Depends(get_session)):
     rows=(await db.execute(select(ProviderModelMapping,Provider).join(Provider).where(
         ProviderModelMapping.deleted_at.is_(None),Provider.deleted_at.is_(None)).order_by(Provider.name,ProviderModelMapping.id))).all()
     return {'data':[{'mapping_id':m.id,'provider_id':p.id,'provider_name':p.name,'logical_model':m.logical_model,
-        'upstream_model':m.upstream_model,'model_type':m.model_type,'status':m.status,'provider_status':p.status,'provider_max_concurrency':p.max_concurrency} for m,p in rows]}
+        'upstream_model':m.upstream_model,'model_type':m.model_type,'status':m.status,'provider_status':p.status,'provider_max_concurrency':p.max_concurrency,
+        'usable':m.status=='enabled' and p.status=='enabled' and operation_for(m.model_type,p) is not None} for m,p in rows]}
 
 @router.get('')
 async def listing(q:str=Query('',max_length=100),page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),actor=Depends(administrator),db=Depends(get_session)):
@@ -66,7 +68,9 @@ async def detail_data(db,row,hours=24):
     for i,(n,m,p) in enumerate(rows):
         metric=stats.get(str(n.id),{});requests=metric.get('requests',0)
         disabled=n.status!='enabled' or p.status!='enabled' or m.status!='enabled' or p.deleted_at or m.deleted_at
-        state='disabled' if disabled else 'unavailable' if p.health_status=='unhealthy' else 'cooling' if (n.cooldown_until and n.cooldown_until>now() or p.cooldown_until and p.cooldown_until>now()) else 'probe' if n.cooldown_until else n.health_status
+        from app.schemas.balance import matching_type
+        invalid=not matching_type(model.model_type,m.model_type) or operation_for(model.model_type,p) is None
+        state='disabled' if disabled else 'invalid' if invalid else 'unavailable' if p.health_status=='unhealthy' else 'cooling' if (n.cooldown_until and n.cooldown_until>now() or p.cooldown_until and p.cooldown_until>now()) else 'probe' if n.cooldown_until else n.health_status
         nodes.append({**public(n),'provider_id':p.id,'provider_name':p.name,'logical_model':m.logical_model,'upstream_model':m.upstream_model,
             'model_type':m.model_type,'state':state,'provider_health':p.health_status,'provider_max_concurrency':p.max_concurrency,
             'current_concurrency':loads[1+i*2],'provider_concurrency':loads[2+i*2],'requests':requests,
@@ -90,10 +94,16 @@ async def save(body,request,actor,db,row=None):
         if await db.get(LogicalModel,body.model_name):raise APIError(409,'MODEL_NAME_CONFLICT','统一模型名称已被占用')
         if (await db.scalar(select(func.count()).select_from(BalancedRoute)))>=100:raise APIError(422,'BALANCE_LIMIT','最多100个路由组')
     ids=[n.mapping_id for n in body.nodes]
-    mappings=(await db.execute(select(ProviderModelMapping,Provider).join(Provider).where(ProviderModelMapping.id.in_(ids),
-        ProviderModelMapping.deleted_at.is_(None),Provider.deleted_at.is_(None)))).all()
+    retained=set((await db.scalars(select(BalancedNode.mapping_id).where(BalancedNode.route_id==row.id))).all()) if row else set()
+    mappings=(await db.execute(select(ProviderModelMapping,Provider).join(Provider).where(ProviderModelMapping.id.in_(ids)))).all()
     if len(mappings)!=len(ids):raise APIError(422,'BALANCE_MAPPING_INVALID','存在已删除或无效的模型实例')
-    if any(not matching_type(body.model_type,m.model_type) for m,p in mappings):raise APIError(422,'BALANCE_TYPE_CONFLICT','节点模型类型与统一模型类型不一致')
+    if any((m.deleted_at or p.deleted_at) and m.id not in retained for m,p in mappings):
+        raise APIError(422,'BALANCE_MAPPING_INVALID','不能添加已删除的模型实例')
+    enabled_ids={n.mapping_id for n in body.nodes if n.status=='enabled'}
+    relevant=[(m,p) for m,p in mappings if not m.deleted_at and not p.deleted_at and (m.id not in retained or body.status=='enabled' and m.id in enabled_ids)]
+    if any(not matching_type(body.model_type,m.model_type) for m,p in relevant):raise APIError(422,'BALANCE_TYPE_CONFLICT','节点模型类型与统一模型类型不一致')
+    if any(m.id in enabled_ids and operation_for(body.model_type,p) is None for m,p in relevant):
+        raise APIError(422,'BALANCE_PROTOCOL_UNSUPPORTED','存在协议不支持当前模型类型的节点，请修正供应商配置或停用节点')
     values=body.model_dump(exclude={'nodes','model_type','expected_config_version'})
     action='update_balance_route' if row else 'create_balance_route'
     try:

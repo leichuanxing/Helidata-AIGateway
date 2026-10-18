@@ -9,12 +9,21 @@ from sqlalchemy import select,update,or_
 from app.core.database import session_factory
 from app.core.security import now
 from app.models.balance import BalancedRoute,BalancedNode
-from app.models.user import Provider,ProviderModelMapping
+from app.models.user import Provider,ProviderModelMapping,LogicalModel
+from app.schemas.balance import matching_type
+from app.services.balance_capabilities import operation_for
 from app.providers.registry import build_adapter
 from app.providers.base import ProviderFailure
 from app.services.provider_crypto import decrypt_secret
 
 logger=logging.getLogger(__name__)
+
+async def reset_nodes(db,provider_id,mapping_ids=None):
+    ids=select(ProviderModelMapping.id).where(ProviderModelMapping.provider_id==provider_id)
+    if mapping_ids is not None:ids=ids.where(ProviderModelMapping.id.in_(mapping_ids))
+    await db.execute(update(BalancedNode).where(BalancedNode.mapping_id.in_(ids)).values(
+        health_status='unknown',failure_count=0,cooldown_until=None,last_checked_at=None,
+        last_latency_ms=None,last_error_code=None,next_check_at=now()))
 
 async def finish(ctx,outcome,code=None):
     node=getattr(ctx,'balance_node',None);route=getattr(ctx,'balance_route',None)
@@ -22,7 +31,11 @@ async def finish(ctx,outcome,code=None):
     if outcome!='success' and (not code or not code.startswith('UPSTREAM_') or code in ('UPSTREAM_REQUEST_REJECTED','UPSTREAM_POOL_EXHAUSTED')):return
     try:
         async with session_factory.begin() as db:
-            current=await db.scalar(select(BalancedRoute).where(BalancedRoute.id==route.id,BalancedRoute.config_version==route.config_version))
+            current=await db.scalar(select(BalancedRoute).where(BalancedRoute.id==route.id,BalancedRoute.config_version==route.config_version).with_for_update())
+            if current is None:return
+            live=await db.scalar(select(Provider.id).where(Provider.id==ctx.provider.id,
+                Provider.config_version==ctx.provider.config_version,Provider.status=='enabled',Provider.deleted_at.is_(None)).with_for_update())
+            if live is None:return
             row=await db.scalar(select(BalancedNode).where(BalancedNode.id==node.id).with_for_update())
             if not current or not row:return
             row.last_latency_ms=round((monotonic()-ctx.attempt_started)*1000);row.last_error_code=code
@@ -54,10 +67,14 @@ async def _probe(route_id,node_id):
         route,node,mapping,provider=result
         if route.status!='enabled' or node.status!='enabled' or mapping.status!='enabled' or mapping.deleted_at or provider.status!='enabled' or provider.deleted_at:
             return {'success':False,'code':'NODE_DISABLED'}
+        alias=await db.get(LogicalModel,route.model_name)
+        operation=operation_for(alias.model_type,provider) if alias else None
+        if not alias or not matching_type(alias.model_type,mapping.model_type) or not operation:
+            return {'success':False,'code':'BALANCE_NODE_INCOMPATIBLE'}
     started=monotonic();code=None;success=False;unsupported=False
     try:
         async with asyncio.timeout(12):
-            adapter=build_adapter(provider,decrypt_secret(provider.api_key_encrypted));await adapter.list_models()
+            adapter=build_adapter(provider,decrypt_secret(provider.api_key_encrypted),operation);await adapter.list_models()
         success=True
     except ProviderFailure as error:
         code=error.code;unsupported=error.status in (404,405,501) or getattr(locals().get('adapter'),'http_status',None) in (404,405,501)
@@ -65,8 +82,8 @@ async def _probe(route_id,node_id):
     except Exception:code='PROVIDER_CHECK_FAILED'
     latency=round((monotonic()-started)*1000)
     async with session_factory.begin() as db:
-        current=await db.scalar(select(BalancedRoute).where(BalancedRoute.id==route_id,BalancedRoute.config_version==route.config_version))
-        live=await db.scalar(select(Provider.id).where(Provider.id==provider.id,Provider.config_version==provider.config_version,Provider.deleted_at.is_(None),Provider.status=='enabled'))
+        current=await db.scalar(select(BalancedRoute).where(BalancedRoute.id==route_id,BalancedRoute.config_version==route.config_version).with_for_update())
+        live=await db.scalar(select(Provider.id).where(Provider.id==provider.id,Provider.config_version==provider.config_version,Provider.deleted_at.is_(None),Provider.status=='enabled').with_for_update())
         row=await db.scalar(select(BalancedNode).where(BalancedNode.id==node_id).with_for_update())
         if not current or not live or not row:return {'success':False,'code':'CONFIG_CHANGED'}
         row.last_checked_at=now();row.next_check_at=now()+timedelta(seconds=route.health_interval)

@@ -217,6 +217,9 @@ async def edit(provider_id: int,body: ProviderEdit,request: Request,actor=Depend
     try:
         await db.flush()
         if body.model_mappings is not None:await sync_mappings(db,row,body.model_mappings)
+        if connection_changed or body.model_mappings is not None:
+            from app.services.balance_health import reset_nodes
+            await reset_nodes(db,row.id)
         await db.refresh(row)
         audit(db,actor.id,'update_provider',row.id,request.client.host,resource_type='provider')
         await db.commit()

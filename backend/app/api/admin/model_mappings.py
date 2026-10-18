@@ -116,6 +116,8 @@ async def mapping(db,provider_id,mapping_id):
     row=await db.scalar(select(ProviderModelMapping).where(ProviderModelMapping.id==mapping_id,ProviderModelMapping.provider_id==provider_id,ProviderModelMapping.deleted_at.is_(None)).with_for_update())
     if not row: raise APIError(404,'MAPPING_NOT_FOUND','映射不存在')
     account.config_version+=1
+    from app.services.balance_health import reset_nodes
+    await reset_nodes(db,account.id,[row.id])
     return row
 
 

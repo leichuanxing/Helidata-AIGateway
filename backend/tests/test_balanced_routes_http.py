@@ -9,14 +9,17 @@ import httpx
 class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_crud_protocols_nodes_failover_authorization_and_monitoring(self):
         ident=os.environ.get('AUDIT_CONTAINER_ID','');self.assertGreaterEqual(len(ident),12);self.assertEqual(os.environ.get('HOSTNAME','')[:12],ident[:12])
-        calls=[];modes={};active={};peaks={};seen_content={};lock=threading.Lock()
+        gets=[];calls=[];modes={};active={};peaks={};seen_content={};lock=threading.Lock()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
             def answer(self,status,body):
                 data=json.dumps(body).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers()
                 try:self.wfile.write(data)
                 except (BrokenPipeError,ConnectionResetError):pass
-            def do_GET(self):self.answer(200,{'data':[{'id':'a'},{'id':'b'}]})
+            def do_GET(self):
+                gets.append(self.path)
+                if self.path.startswith('/bad/'):return self.answer(401,{'error':{'message':'fixture wrong endpoint'}})
+                self.answer(200,{'data':[{'id':'a'},{'id':'b'}]})
             def do_POST(self):
                 body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));node=body['model'];mode=modes.get(node,'ok')
                 with lock:calls.append((node,self.path,bool(body.get('stream'))));seen_content[node]=body.get('messages')
@@ -158,6 +161,59 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     policy=await api('POST','admin/compliance/policies',{'name':prefix,'status':'enabled','action':'block','models':[prefix+'a',prefix+'b']})
                     await api('POST','admin/compliance/words',{'pattern':'blocked','policy_id':policy['id']});start=len(calls);r=await chat(text='blocked')
                     self.assertEqual(r.status_code,403);self.assertEqual(len(calls),start)
+                    # Real supplier configuration changes must immediately affect routing/catalog/monitoring.
+                    modes.update(a='ok',b='ok')
+                    aid,bid=[p['id'] for p in providers]
+                    async def patch_provider(ident,values):return await api('PATCH',f'admin/providers/{ident}',values)
+                    async def put_mapping(kind='text',status='enabled',upstream='a'):
+                        return await api('PUT',f'admin/providers/{aid}/model-mappings/{mapping_ids[0]}',{'logical_model':prefix+'a','upstream_model':upstream,'model_type':kind,'status':status})
+                    await patch_provider(aid,{'status':'disabled'});start=len(calls)
+                    self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'b')
+                    self.assertEqual((await api('GET',route_path))['nodes'][0]['state'],'disabled')
+                    self.assertFalse(next(o for o in await api('GET','admin/balance-routes/options') if o['mapping_id']==mapping_ids[0])['usable'])
+                    await patch_provider(aid,{'status':'enabled'})
+                    await put_mapping(status='disabled');start=len(calls)
+                    self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'b')
+                    await put_mapping(kind='multimodal');start=len(calls)
+                    self.assertEqual((await api('GET',route_path))['nodes'][0]['state'],'invalid')
+                    self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'b')
+                    await put_mapping()
+                    for ident in (aid,bid):await patch_provider(ident,{'protocol_config':{'openai-embeddings':{}}})
+                    self.assertTrue(all(n['state']=='invalid' for n in (await api('GET',route_path))['nodes']))
+                    self.assertNotIn(body['model_name'],[m['id'] for m in (await client.get('/v1/models')).json()['data']])
+                    self.assertEqual((await chat()).status_code,503)
+                    failed=await api('POST',route_path+f"/nodes/{node_a['id']}/check",{})
+                    self.assertEqual(failed['code'],'BALANCE_NODE_INCOMPATIBLE')
+                    for p in providers:await patch_provider(p['id'],{'protocol_config':p['protocol_config']})
+                    await put_mapping(upstream='renamed-a');start=len(calls)
+                    self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'renamed-a')
+                    await put_mapping()
+                    # Probe the operation's endpoint, not the account's different primary protocol.
+                    split=await api('POST','admin/providers',{'name':prefix+'-split','provider_type':'custom_openai','protocol':'anthropic',
+                        'protocol_type':'text','base_url':f'http://127.0.0.1:{server.server_port}/bad/v1',
+                        'protocol_config':{'anthropic-messages':{'auth_type':'x-api-key'},'openai-completions':{'api_url':f'http://127.0.0.1:{server.server_port}/correct/v1'}},
+                        'model_mappings':[{'logical_model':prefix+'-split','upstream_model':'split','model_type':'text'}]},201)
+                    split_mapping=(await api('GET',f"admin/providers/{split['id']}/model-mappings"))[0]['id']
+                    split_route=await api('POST','admin/balance-routes',{'name':prefix+'-split','model_name':prefix+'-split-route','nodes':[{'mapping_id':split_mapping}],'health_interval':3600},201)
+                    split_path='admin/balance-routes/'+str(split_route['id'])
+                    split_node=(await api('GET',split_path))['nodes'][0]['id']
+                    checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
+                    self.assertTrue(checked['success']);self.assertEqual(gets[-1],'/correct/v1/models')
+                    await patch_provider(split['id'],{'base_url':f'http://127.0.0.1:{server.server_port}/bad/v1','protocol_config':{'anthropic-messages':{'auth_type':'x-api-key'},'openai-completions':{}}})
+                    changed=(await api('GET',split_path))['nodes'][0]
+                    self.assertIsNone(changed['cooldown_until']);self.assertEqual(changed['health_status'],'unknown')
+                    self.assertFalse((await api('POST',split_path+f'/nodes/{split_node}/check',{}))['success'])
+                    await api('DELETE',split_path)
+                    await api('POST',f'admin/providers/{aid}/model-mappings',{'logical_model':prefix+'-spare','upstream_model':'spare'},201)
+                    await api('DELETE',f'admin/providers/{aid}/model-mappings/{mapping_ids[0]}')
+                    self.assertEqual((await api('GET',route_path))['nodes'][0]['state'],'disabled')
+                    start=len(calls);self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'b')
+                    body['status']='disabled';await save();self.assertEqual((await api('GET',route_path))['status'],'disabled')
+                    body['status']='enabled';await save()
+                    body['nodes']=body['nodes'][1:];await save()
+                    await api('DELETE',f'admin/providers/{bid}')
+                    self.assertEqual((await chat()).status_code,503)
+                    self.assertNotIn(body['model_name'],[m['id'] for m in (await client.get('/v1/models')).json()['data']])
                     group=await api('POST','admin/model-groups',{'name':prefix,'protocol_type':'text','logical_models':[body['model_name']]},201)
                     await api('DELETE',route_path,status=409);await api('DELETE',f"admin/model-groups/{group['id']}")
                     await api('DELETE',route_path);self.assertNotIn(body['model_name'],[m['id'] for m in (await client.get('/v1/models')).json()['data']])
