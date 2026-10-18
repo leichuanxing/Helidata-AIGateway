@@ -11,6 +11,12 @@ export function categoryProtocols(type:ProviderType|undefined,plan:string,catego
   return options.filter(p=>supported.includes(p))
 }
 
+export function providerCategoryOptions(type:ProviderType|undefined,plan:string,labels:Record<string,string>){
+  return Object.entries(labels).filter(([value])=>value!=='mixed').map(([value,label])=>({
+    value,label,disabled:!type||categoryProtocols(type,plan,value).length===0,
+  }))
+}
+
 export function automaticConnection(type:ProviderType|undefined,plan:string,category:string|null,baseUrl:string){
   baseUrl=baseUrl.trim().replace(/\/+$/,'')
   const preset=accountPreset(type,plan),selected=categoryProtocols(type,plan,category)

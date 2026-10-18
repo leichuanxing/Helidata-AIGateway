@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {accountPreset,categoryProtocols,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
+import {accountPreset,categoryProtocols,providerCategoryOptions,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
 
 test('normal providers automatically select all supported category protocols and dedicated URLs',()=>{
   const type={base_url:'https://api.example/v1',supported_protocols:['openai-completions','openai-responses','anthropic-messages','openai-embeddings'],protocol_urls:{'openai-responses':'https://api.example','anthropic-messages':'https://api.example/anthropic/v1'}}
@@ -40,6 +40,18 @@ test('native Ollama remains selectable and vector selects embeddings',()=>{
 })
 test('unsupported Responses is not offered by chat-only presets',()=>{
   assert.deepEqual(categoryProtocols({supported_protocols:['openai-completions']},'standard','text'),['openai-completions'])
+})
+
+test('image category remains visible with accurate provider and plan support',()=>{
+  const labels={text:'文本',image:'文生图',rerank:'重排序',mixed:'历史混合'}
+  const vendor={supported_protocols:['openai-completions','openai-images'],account_types:{coding:{supported_protocols:['openai-completions']}}}
+  assert.equal(providerCategoryOptions(vendor,'standard',labels).find(o=>o.value==='image').disabled,false)
+  assert.equal(providerCategoryOptions(vendor,'coding',labels).find(o=>o.value==='image').disabled,true)
+  assert.equal(providerCategoryOptions(vendor,'standard',labels).some(o=>o.value==='mixed'),false)
+  assert.equal(providerCategoryOptions(undefined,'standard',labels).every(o=>o.disabled),true)
+  assert.deepEqual(automaticConnection(vendor,'standard','image','https://example.com/v1').selected,['openai-images'])
+  const rows=[{logical_model:'draw',upstream_model:'image-model',model_type:'text',status:'enabled'}]
+  adaptMappingTypes(rows,'image');assert.equal(rows[0].model_type,'image')
 })
 test('category changes keep names and status while adapting every mapping type',()=>{
   const rows=[{logical_model:'a',upstream_model:'b',model_type:'text',status:'enabled'}]
