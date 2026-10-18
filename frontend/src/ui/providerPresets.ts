@@ -13,7 +13,7 @@ export function categoryProtocols(type:ProviderType|undefined,plan:string,catego
 
 export function providerCategoryOptions(type:ProviderType|undefined,plan:string,labels:Record<string,string>){
   return Object.entries(labels).filter(([value])=>value!=='mixed').map(([value,label])=>({
-    value,label,disabled:!type||categoryProtocols(type,plan,value).length===0,reason:accountPreset(type,plan).category_notes[value]||'当前供应商预设或套餐尚未接入此协议。',
+    value,label,disabled:!type||categoryProtocols(type,plan,value).length===0,reason:accountPreset(type,plan).category_notes[value]||(type&&categoryProtocols(type,plan,value).length?'请选择支持此类型的上游模型。':'当前供应商预设或套餐尚未接入此协议。'),
   }))
 }
 
