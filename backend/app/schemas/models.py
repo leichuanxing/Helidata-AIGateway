@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel,ConfigDict,Field,field_validator,StrictInt
+from pydantic import BaseModel,ConfigDict,Field,field_validator
 ModelType=Literal['text','reasoning','multimodal','embedding','rerank','image']
 
 
@@ -28,18 +28,6 @@ class ModelGroupInput(BaseModel):
     status: Literal['enabled','disabled']='enabled'
     protocol_type: Literal['text','multimodal','image','vector'] | None=None
     logical_models: list[str]=Field(default_factory=list,max_length=100)
-    balancing_strategy: Literal['legacy','round_robin','weighted_round_robin','least_concurrency']='legacy'
-    max_retries: int=Field(default=2,ge=0,le=7)
-    attempt_timeout: int=Field(default=120,ge=1,le=3600)
-    retry_uncertain: bool=False
-    node_weights: dict[str,StrictInt]=Field(default_factory=dict,max_length=1000)
-
-    @field_validator('node_weights')
-    @classmethod
-    def valid_weights(cls,value):
-        if any(not k.isascii() or not k.isdigit() or not 1<=int(k)<=2147483647 or str(int(k))!=k or isinstance(v,bool) or not 1<=v<=100 for k,v in value.items()):
-            raise ValueError('节点 ID 必须有效，权重必须为 1–100')
-        return value
 
     @field_validator('name')
     @classmethod

@@ -155,5 +155,4 @@ onBeforeUnmount(()=>{disposed=true;stop()})
 @media(max-width:1100px){.chat-grid{grid-template-columns:minmax(0,1fr) 260px}}
 @media(max-width:800px){.chat-grid{grid-template-columns:1fr}.chat-settings{height:auto;min-height:0;display:block}.chat-settings .provider-link{margin-top:12px}.chat-composer{padding:12px}}
 
-.parameter-form :deep(.el-form-item){margin-bottom:10px}.parameter-form :deep(.el-form-item__label){margin-bottom:4px}.settings-title{min-height:32px;margin-bottom:10px;padding-bottom:10px}.model-groups{margin-bottom:10px}.chat-settings .session-note{padding-top:8px;margin-bottom:8px}.chat-settings>.el-alert{margin-bottom:8px}.chat-settings .provider-link{padding-top:8px}.parameter-form :deep(.el-textarea__inner){min-height:64px!important}.chat-settings{scrollbar-width:thin}
-</style>
+.parameter-form :deep(.el-form-item){margin-bottom:10px}.parameter-form :deep(.el-form-item__label){margin-bottom:4px}.settings-title{min-height:32px;margin-bottom:10px;padding-bottom:10px}.model-groups{margin-bottom:10px}.chat-settings .session-note{padding-top:8px;margin-bottom:8px}.chat-settings>.el-alert{margin-bottom:8px}.chat-settings .provider-link{padding-top:8px}.parameter-form :deep(.el-textarea__inner){min-height:64px!important}.chat-settings{scrollbar-width:thin}`n</style>

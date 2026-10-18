@@ -99,13 +99,12 @@ async def settle(ctx,reservation_id,ident):
         else:return
         if ctx.quota_usage is not None:
             row.reported_tokens=ctx.quota_usage;bucket.reported_tokens+=ctx.quota_usage;row.state='reported'
-        elif getattr(ctx,'upstream_not_processed',False) or ctx.adapter.http_status in (400,401,403,404,422,429):row.state='unused'
+        elif ctx.adapter.http_status in (400,401,403,404,422,429):row.state='unused'
         else:bucket.unreported_budget+=row.budget;row.state='unreported'
 
 @asynccontextmanager
 async def acquire(ctx):
     ctx.quota_usage=None
-    ctx.upstream_not_processed=False
     try:reservation_id,ident=await reserve(ctx)
     except APIError:raise
     except Exception:raise APIError(503,'QUOTA_UNAVAILABLE','无法预留配额') from None

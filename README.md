@@ -183,9 +183,6 @@ docker exec helidata-ai-gateway alembic current
 - [当前状态](docs/current-status.md)
 - [部署、备份与恢复](docs/deployment.md)
 - [数据库设计](docs/database-design.md)
-- [模型组负载均衡配置](docs/model-load-balancing.md)
-- [负载均衡检查与测试报告](docs/load-balancing-review-2026-10-18.md)
-- [负载均衡及关联功能复查](docs/load-balancing-recheck-2026-10-18.md)
 - [v1.0.8 发布记录](docs/release-v1.0.8.md)
 - [许可证](LICENSE)
 

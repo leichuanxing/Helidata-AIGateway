@@ -99,18 +99,12 @@ class RefreshSession(Base):
 class ModelGroup(Base):
     __tablename__ = 'model_groups'
     __table_args__ = (CheckConstraint("status IN ('enabled','disabled')", name='ck_model_group_status'),
-        CheckConstraint("balancing_strategy IN ('legacy','round_robin','weighted_round_robin','least_concurrency') AND max_retries BETWEEN 0 AND 7 AND attempt_timeout BETWEEN 1 AND 3600",name='ck_model_group_balancing'),
         CheckConstraint("protocol_type IN ('text','multimodal','image','vector')",name='ck_model_group_protocol'))
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
     description: Mapped[str] = mapped_column(Text, default='', server_default='')
     status: Mapped[str] = mapped_column(String(20), default='enabled', server_default='enabled')
     protocol_type: Mapped[str | None] = mapped_column(String(20))
-    balancing_strategy: Mapped[str] = mapped_column(String(30),default='legacy',server_default='legacy')
-    max_retries: Mapped[int] = mapped_column(Integer,default=2,server_default='2')
-    attempt_timeout: Mapped[int] = mapped_column(Integer,default=120,server_default='120')
-    retry_uncertain: Mapped[bool] = mapped_column(Boolean,default=False,server_default='false')
-    node_weights: Mapped[dict] = mapped_column(JSONB,default=dict,server_default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

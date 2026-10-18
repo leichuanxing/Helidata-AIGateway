@@ -11,7 +11,6 @@ from app.core.exceptions import APIError
 from app.core.security import now
 from app.gateway import authentication,user_validation,group_validation,model_permission
 from app.gateway.provider_concurrency import RENEW,TTL,RENEW_SECONDS,key as provider_key
-from app.gateway.load_balancing import SELECT_LUA
 
 STREAMS='gateway:streaming'
 QUEUE='gateway:queue';QUEUE_LEASES='gateway:queue:leases'
@@ -25,8 +24,12 @@ for i=1,3 do
  redis.call('ZREMRANGEBYSCORE',KEYS[i],'-inf',n)
  if redis.call('ZCARD',KEYS[i])>=tonumber(ARGV[i+1]) then room=false end
 end
+local selected=nil
+for _,p in ipairs(providers) do
+ redis.call('ZREMRANGEBYSCORE',p.key,'-inf',n)
+ if not selected and redis.call('ZCARD',p.key)<p.limit then selected=p end
+end
 local head=redis.call('ZRANGE',KEYS[4],0,0)[1]
-"""+SELECT_LUA+"""
 if room and selected and (not head or head==token) then
  for i=1,3 do redis.call('ZADD',KEYS[i],n+ttl,token);redis.call('EXPIRE',KEYS[i],ttl+30) end
  if ARGV[8]=='1' then redis.call('ZADD',KEYS[7],n+ttl,token);redis.call('EXPIRE',KEYS[7],ttl+30) end
@@ -99,18 +102,11 @@ class Admission:
                 rows=[pair for pair in rows if pair[0].id not in excluded]
                 if not rows:raise APIError(503,'NO_AVAILABLE_PROVIDER','没有可用上游账号')
                 providers=[];seen=set()
-                from app.providers.configuration import NATIVE,select_protocol
-                from hashlib import sha256
-                policy=self.ctx.balancing
                 for mapping,provider in rows:
                     if provider.id in seen:continue
                     seen.add(provider.id)
                     limit=1 if provider.cooldown_until and provider.cooldown_until<=now() else provider.max_concurrency
-                    pool=f'{mapping.logical_model}:{int(select_protocol(provider,self.ctx.operation)!=NATIVE.get(self.ctx.operation))}:{provider.priority}'
-                    providers.append({'id':provider.id,'key':provider_key(provider.id),'limit':limit,
-                        'pool':pool,'strategy':policy['strategy'],'weight':policy['weights'].get(str(provider.id),1)})
-                signature=sha256(json.dumps(sorted((p['id'],p['weight'],p['pool']) for p in providers)).encode()).hexdigest()[:24]
-                for p in providers:p['state']=f"balancing:{policy['group_id']}:{policy['strategy']}:{signature}:"+sha256(p['pool'].encode()).hexdigest()[:24]
+                    providers.append({'id':provider.id,'key':provider_key(provider.id),'limit':limit})
                 slots=['gateway:concurrency',f'group:{self.ctx.group.id}:concurrency',f'apikey:{self.ctx.key.id}:concurrency' if self.ctx.key else f'webchat:{self.ctx.user.id}:concurrency']
                 from app.services.group_access import concurrency_limits
                 group_limit,key_limit=concurrency_limits(self.ctx.group,cfg.max_concurrency)

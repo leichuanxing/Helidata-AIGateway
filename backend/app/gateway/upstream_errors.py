@@ -11,5 +11,4 @@ def translate(error):
         status, code = 400, 'UPSTREAM_REQUEST_REJECTED'
     result=APIError(status, code, '上游调用失败，请检查模型参数或账号连接状态')
     result.upstream_status=error.status if isinstance(error,ProviderFailure) else None
-    result.safe_to_retry=getattr(error,'safe_to_retry',False)
     return result
