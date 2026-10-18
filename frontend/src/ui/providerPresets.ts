@@ -2,7 +2,7 @@ import type {ProviderType,ProviderDraftMapping} from '../api/provider'
 
 export function accountPreset(type:ProviderType|undefined,plan:string){
   const selected=type?.account_types?.[plan]
-  return {...type,...selected,protocol_urls:{...type?.protocol_urls,...selected?.protocol_urls}}
+  return {...type,...selected,protocol_urls:{...type?.protocol_urls,...selected?.protocol_urls},category_notes:{...type?.category_notes,...selected?.category_notes}}
 }
 
 export function categoryProtocols(type:ProviderType|undefined,plan:string,category:string|null){
@@ -13,8 +13,13 @@ export function categoryProtocols(type:ProviderType|undefined,plan:string,catego
 
 export function providerCategoryOptions(type:ProviderType|undefined,plan:string,labels:Record<string,string>){
   return Object.entries(labels).filter(([value])=>value!=='mixed').map(([value,label])=>({
-    value,label,disabled:!type||categoryProtocols(type,plan,value).length===0,
+    value,label,disabled:!type||categoryProtocols(type,plan,value).length===0,reason:accountPreset(type,plan).category_notes[value]||'当前供应商预设或套餐尚未接入此协议。',
   }))
+}
+
+export function categoryBaseUrl(type:ProviderType|undefined,plan:string,category:string|null){
+  const preset=accountPreset(type,plan),first=categoryProtocols(type,plan,category)[0]
+  return first&&preset.protocol_urls[first]||preset.base_url||''
 }
 
 export function automaticConnection(type:ProviderType|undefined,plan:string,category:string|null,baseUrl:string){

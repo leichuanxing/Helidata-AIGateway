@@ -9,7 +9,7 @@ import httpx
 class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_crud_protocols_nodes_failover_authorization_and_monitoring(self):
         ident=os.environ.get('AUDIT_CONTAINER_ID','');self.assertGreaterEqual(len(ident),12);self.assertEqual(os.environ.get('HOSTNAME','')[:12],ident[:12])
-        gets=[];calls=[];modes={};active={};peaks={};seen_content={};lock=threading.Lock()
+        gets=[];calls=[];modes={};active={};peaks={};seen_content={};seen_payload={};lock=threading.Lock()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
             def answer(self,status,body):
@@ -22,7 +22,7 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                 self.answer(200,{'data':[{'id':'a'},{'id':'b'}]})
             def do_POST(self):
                 body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));node=body['model'];mode=modes.get(node,'ok')
-                with lock:calls.append((node,self.path,bool(body.get('stream'))));seen_content[node]=body.get('messages')
+                with lock:calls.append((node,self.path,bool(body.get('stream'))));seen_content[node]=body.get('messages');seen_payload[node]=body
                 if mode=='rate':return self.answer(429,{'error':{'message':'fixture rate'}})
                 if mode=='error':return self.answer(503,{'error':{'message':'fixture unavailable'}})
                 if mode=='stall':time.sleep(1.3)
@@ -31,7 +31,9 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     time.sleep(.15)
                     with lock:active[node]-=1
                 if self.path.endswith('/embeddings'):return self.answer(200,{'object':'list','data':[{'object':'embedding','index':0,'embedding':[1.0,0.0]}],'usage':{'prompt_tokens':1,'total_tokens':1}})
+                if self.path.endswith('/services/rerank/text-rerank/text-rerank'):return self.answer(200,{'output':{'results':[{'index':0,'relevance_score':.9}]},'usage':{'total_tokens':1},'request_id':'native-rank'})
                 if self.path.endswith('/rerank'):return self.answer(200,{'results':[{'index':0,'relevance_score':.9}],'usage':{'total_tokens':1}})
+                if self.path.endswith('/images/generations') and node=='cap-siliconflow-image':return self.answer(200,{'images':[{'url':'https://fixture.invalid/image.png'}]})
                 if self.path.endswith('/images/generations'):return self.answer(200,{'created':1,'data':[{'b64_json':'aGVsbG8='}]})
                 chat={'id':'chat-'+node,'object':'chat.completion','created':1,'model':node,'choices':[{'index':0,'message':{'role':'assistant','content':node},'finish_reason':'stop'}],'usage':{'prompt_tokens':1,'completion_tokens':1,'total_tokens':2}}
                 response={'id':'resp-'+node,'object':'response','model':node,'status':'completed','output':[{'type':'message','role':'assistant','content':[{'type':'output_text','text':node}]}],'usage':{'input_tokens':1,'output_tokens':1,'total_tokens':2}}
@@ -158,6 +160,33 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                         if kind=='multimodal':self.assertEqual(seen_content[kind][0]['content'][1]['type'],'image_url')
                         self.assertEqual((await log(result.headers['x-request-id']))['trace']['attempts'][-1]['balance_route_id'],other['id'])
                         await api('DELETE','admin/balance-routes/'+str(other['id']))
+                    from app.providers.registry import PROVIDER_TYPES
+                    combinations=[]
+                    for code,entry in PROVIDER_TYPES.items():
+                        for kind,wire,path,payload in [('rerank','openai-rerank','/v1/rerank',{'query':'q','documents':['doc'],'top_n':1}),('image','openai-images','/v1/images/generations',{'prompt':'a mountain','n':1,'size':'1024x1024'})]:
+                            if wire not in entry['supported_protocols']:continue
+                            name=prefix+'-cap-'+code+'-'+kind;upstream='cap-'+code+'-'+kind
+                            base=f'http://127.0.0.1:{server.server_port}'+('/api/v1' if code=='aliyun' and kind=='rerank' else '/v1')
+                            p=await api('POST','admin/providers',{'name':name,'provider_type':code,'protocol':'openai','protocol_type':kind,'base_url':base,
+                                'api_key':'fixture-only','protocol_config':{wire:{}},'model_mappings':[{'logical_model':name,'upstream_model':upstream,'model_type':kind}]},201)
+                            r=await client.post(path,json={'model':name,**payload});self.assertEqual(r.status_code,200,(code,kind,r.text[:300]))
+                            if code=='aliyun' and kind=='rerank':
+                                self.assertEqual(calls[-1][1],'/api/v1/services/rerank/text-rerank/text-rerank')
+                                self.assertEqual(seen_payload[upstream]['input'],{'query':'q','documents':['doc']})
+                                self.assertEqual(seen_payload[upstream]['parameters']['top_n'],1)
+                                self.assertEqual(r.json()['results'][0]['index'],0)
+                            if code=='siliconflow' and kind=='image':
+                                self.assertEqual(seen_payload[upstream]['image_size'],'1024x1024');self.assertNotIn('n',seen_payload[upstream])
+                                self.assertEqual(r.json()['data'][0]['url'],'https://fixture.invalid/image.png')
+                                start=len(calls);denied=await client.post(path,json={'model':name,**payload,'n':2})
+                                self.assertEqual(denied.status_code,400);self.assertEqual(len(calls),start)
+                            mid=(await api('GET',f"admin/providers/{p['id']}/model-mappings"))[0]['id']
+                            route=await api('POST','admin/balance-routes',{'name':name,'model_name':name+'-route','model_type':kind,'nodes':[{'mapping_id':mid}],'health_interval':3600},201)
+                            r=await client.post(path,json={'model':name+'-route',**payload});self.assertEqual(r.status_code,200,(code,kind,r.text[:300]))
+                            await api('DELETE','admin/balance-routes/'+str(route['id']))
+                            combinations.append((code,kind))
+                    self.assertEqual(len(combinations),13)
+                    print('PASS all catalog-enabled vendor/operation combinations, direct and balanced:',combinations)
                     policy=await api('POST','admin/compliance/policies',{'name':prefix,'status':'enabled','action':'block','models':[prefix+'a',prefix+'b']})
                     await api('POST','admin/compliance/words',{'pattern':'blocked','policy_id':policy['id']});start=len(calls);r=await chat(text='blocked')
                     self.assertEqual(r.status_code,403);self.assertEqual(len(calls),start)

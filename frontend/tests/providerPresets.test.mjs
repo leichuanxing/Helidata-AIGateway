@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {accountPreset,categoryProtocols,providerCategoryOptions,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
+import {accountPreset,categoryProtocols,providerCategoryOptions,categoryBaseUrl,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
 
 test('normal providers automatically select all supported category protocols and dedicated URLs',()=>{
   const type={base_url:'https://api.example/v1',supported_protocols:['openai-completions','openai-responses','anthropic-messages','openai-embeddings'],protocol_urls:{'openai-responses':'https://api.example','anthropic-messages':'https://api.example/anthropic/v1'}}
@@ -67,6 +67,15 @@ test('reranking has a dedicated wire protocol and mapping type',()=>{
   const rows=[{logical_model:'rank',upstream_model:'rank-upstream',model_type:'embedding',status:'enabled'}]
   adaptMappingTypes(rows,'rerank');assert.equal(rows[0].model_type,'rerank')
   adaptMappingTypes(rows,'vector');assert.equal(rows[0].model_type,'rerank') // Existing vector accounts remain compatible.
+})
+
+test('vendor category address and capability explanations follow the selected plan',()=>{
+  const vendor={base_url:'https://vendor.example/compatible-mode/v1',supported_protocols:['openai-images','openai-rerank'],protocol_urls:{'openai-rerank':'https://vendor.example/api/v1'},category_notes:{image:'image models only',rerank:'native conversion'},account_types:{coding:{supported_protocols:['openai-completions'],category_notes:{image:'plan restricted'}}}}
+  assert.equal(categoryBaseUrl(vendor,'standard','rerank'),'https://vendor.example/api/v1')
+  assert.equal(categoryBaseUrl(vendor,'standard','image'),vendor.base_url)
+  assert.equal(providerCategoryOptions(vendor,'coding',{image:'文生图'})[0].reason,'plan restricted')
+  assert.equal(providerCategoryOptions(vendor,'standard',{image:'文生图'})[0].disabled,false)
+  assert.equal(providerCategoryOptions(vendor,'coding',{image:'文生图'})[0].disabled,true)
 })
 test('complete API base URLs reject endpoints and unsafe input',()=>{
   for(const value of ['https://example.com/v1','http://127.0.0.1:11434','https://example.com/api/coding/paas/v4'])assert.equal(validServiceUrl(value),true)

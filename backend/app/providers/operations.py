@@ -13,13 +13,17 @@ def compatible(operation,provider):
     from app.providers.registry import PROVIDER_TYPES
     supported=PROVIDER_TYPES.get(provider.provider_type,{}).get('operations')
     if supported is not None and operation not in supported:return False
-    from app.providers.configuration import select_protocol,NAMES
+    from app.providers.configuration import select_protocol,NAMES,NATIVE
+    if operation in ('rerank','images'):
+        entry=PROVIDER_TYPES.get(provider.provider_type,{})
+        plan=entry.get('account_types',{}).get(getattr(provider,'account_type','standard'),{})
+        if NATIVE[operation] not in plan.get('supported_protocols',entry.get('supported_protocols',[])):return False
     selected=select_protocol(provider,operation)
     if not selected:return False
     protocol=NAMES[selected]
     if operation in ('chat','messages'):return protocol in ('openai','anthropic')
     if operation in ('responses','embeddings','images'):return protocol=='openai'
-    return operation=='rerank' and protocol=='openai' and provider.provider_type=='custom_openai'
+    return operation=='rerank' and protocol=='openai'
 
 def prepare(ctx):
     from app.providers.translator import chat_to_messages,messages_to_chat

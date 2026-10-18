@@ -1,0 +1,33 @@
+"""Bounded vendor-specific rerank/image wire conversion; no extra billable calls."""
+import time
+from app.providers.base import CustomOpenAIProvider,ProviderFailure
+from app.core.config import get_settings
+
+class AliyunProvider(CustomOpenAIProvider):
+    async def rerank(self,payload):
+        # Preserve the configured origin/private proxy; never send credentials to a
+        # different host while translating the old compatible-mode base path.
+        if self.base_url.endswith('/compatible-mode/v1'):
+            self.base_url=self.base_url[:-len('/compatible-mode/v1')]+'/api/v1'
+        parameters={k:v for k,v in payload.items() if k not in ('model','query','documents','stream')}
+        result=await self.request('POST','/services/rerank/text-rerank/text-rerank',
+            {'model':payload['model'],'input':{'query':payload['query'],'documents':payload['documents']},'parameters':parameters},
+            timeout=get_settings().gateway.nonstream_timeout,max_bytes=8*1024*1024)
+        output=result.get('output')
+        if not isinstance(output,dict) or not isinstance(output.get('results'),list):raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+        return {'results':output['results'],**({'usage':result['usage']} if isinstance(result.get('usage'),dict) else {}),
+                **({'id':result['request_id']} if isinstance(result.get('request_id'),str) else {})}
+
+class SiliconFlowProvider(CustomOpenAIProvider):
+    async def image_generation(self,payload):
+        if payload.get('n',1)!=1 or payload.get('response_format','url')!='url' or 'batch_size' in payload:
+            raise ProviderFailure('UPSTREAM_REQUEST_REJECTED',status=400,safe_to_retry=True)
+        body={k:v for k,v in payload.items() if k not in ('n','stream','response_format','size')}
+        if 'size' in payload:
+            if 'image_size' in body and body['image_size']!=payload['size']:raise ProviderFailure('UPSTREAM_REQUEST_REJECTED',status=400,safe_to_retry=True)
+            body['image_size']=payload['size']
+        result=await self.request('POST','/images/generations',body,
+            timeout=get_settings().gateway.nonstream_timeout,max_bytes=8*1024*1024)
+        rows=result.get('images')
+        if not isinstance(rows,list):raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+        return {'created':int(time.time()),'data':rows,**({'usage':result['usage']} if isinstance(result.get('usage'),dict) else {})}

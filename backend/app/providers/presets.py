@@ -80,3 +80,5 @@ def enrich(catalog):
     catalog['opencode']['description']='不同模型使用 Chat、Responses 或 Messages 协议；请按官方模型端点表选择。Go 与 Zen 的地址、Key 和计费方式不同。'
     catalog['ollama']['operations']=['chat','messages','responses','embeddings']
     catalog['ollama']['description']+=' 当前新增账号使用 OpenAI 兼容 /v1 端点；原生 /api 协议不用于新增生成账号。'
+    from app.providers.capabilities import enrich_capabilities
+    enrich_capabilities(catalog)

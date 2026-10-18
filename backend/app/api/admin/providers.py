@@ -50,10 +50,10 @@ async def target(db,provider_id,lock=False):
 
 
 def validate_input(body,has_key):
-    if body.protocol_type=='rerank':
+    if body.protocol_type in ('rerank','image'):
         from app.providers.operations import compatible
-        if not compatible('rerank',body):
-            raise APIError(422,'PROVIDER_PROTOCOL_MISMATCH','当前供应商或协议不支持重排序，请使用支持 openai-rerank 的自定义服务')
+        if not compatible('rerank' if body.protocol_type=='rerank' else 'images',body):
+            raise APIError(422,'PROVIDER_PROTOCOL_MISMATCH','当前供应商、套餐或协议未适配所选模型类型，请核对接入能力')
     plans=PROVIDER_TYPES[body.provider_type].get('account_types',{'standard':{'name':'标准账号'}})
     if body.account_type not in plans:raise APIError(422,'PROVIDER_ACCOUNT_TYPE_MISMATCH','供应商与账号类型不匹配')
     if body.protocol_config is None and body.protocol not in PROVIDER_TYPES[body.provider_type]['protocols']:

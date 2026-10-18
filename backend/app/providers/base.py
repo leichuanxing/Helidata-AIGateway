@@ -108,7 +108,7 @@ class OpenAIProvider(BaseProvider):
     async def chat_completion(self,payload): return await self.request('POST','/chat/completions',payload,timeout=get_settings().gateway.nonstream_timeout,max_bytes=8*1024*1024)
     async def responses(self,payload): return await self.request('POST','/responses',payload)
     async def embeddings(self,payload): return await self.request('POST','/embeddings',payload)
-    async def image_generation(self,payload): return await self.request('POST','/images/generations',payload)
+    async def image_generation(self,payload): return await self.request('POST','/images/generations',payload,timeout=get_settings().gateway.nonstream_timeout,max_bytes=32*1024*1024)
 
 
 class CustomOpenAIProvider(OpenAIProvider):

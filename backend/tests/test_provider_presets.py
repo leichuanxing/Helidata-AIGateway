@@ -9,6 +9,23 @@ from types import SimpleNamespace
 
 
 class ProviderPresetTests(unittest.TestCase):
+    def test_image_and_rerank_capabilities_match_adapters_for_every_plan(self):
+        from app.providers.operations import compatible
+        expected={'rerank':{'aliyun','siliconflow','vllm','sglang','custom_openai'},
+                  'images':{'openai','zhipu','aliyun','siliconflow','volcengine','gemini','sglang','custom_openai'}}
+        for operation,codes in expected.items():
+            wire='openai-rerank' if operation=='rerank' else 'openai-images'
+            for code,entry in PROVIDER_TYPES.items():
+                self.assertEqual(wire in entry['supported_protocols'],code in codes,(code,operation))
+                for name,plan in entry['account_types'].items():
+                    row=SimpleNamespace(provider_type=code,account_type=name,protocol='openai',protocol_config={wire:{'auth_type':'bearer'}},base_url=plan['base_url'],proxy=None)
+                    supported=wire in plan.get('supported_protocols',entry['supported_protocols'])
+                    self.assertEqual(compatible(operation,row),supported,(code,name,operation))
+                    self.assertIn('image',entry['category_notes']);self.assertIn('rerank',entry['category_notes'])
+                    if supported:
+                        adapter=build_adapter(row,'fixture-key',operation)
+                        self.assertNotEqual(getattr(type(adapter),'rerank' if operation=='rerank' else 'image_generation'),__import__('app.providers.base',fromlist=['BaseProvider']).BaseProvider.__dict__['rerank' if operation=='rerank' else 'image_generation'])
+
     def test_independent_rerank_category_and_legacy_vector(self):
         from app.services.provider_rules import category_mapping
         from app.schemas.models import MappingInput

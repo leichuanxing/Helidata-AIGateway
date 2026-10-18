@@ -41,6 +41,8 @@ async def execute(ctx):
         try:
             async with asyncio.timeout(CHAT_TIMEOUT_SECONDS if CHAT_TIMEOUT_SECONDS!=120 else getattr(get_settings().gateway,'nonstream_timeout',120)):
                 if ctx.operation=='chat' and ctx.wire_operation=='chat':result=await ctx.adapter.chat_completion(payload)
+                elif ctx.wire_operation=='rerank':result=await ctx.adapter.rerank(payload)
+                elif ctx.wire_operation=='images':result=await ctx.adapter.image_generation(payload)
                 else:result=await ctx.adapter.request('POST',PATHS[ctx.wire_operation],payload,timeout=getattr(get_settings().gateway,'nonstream_timeout',120),max_bytes=32*1024*1024 if ctx.operation=='images' else 8*1024*1024)
             return validate(ctx,result)
         except (TimeoutError,ProviderFailure) as error:raise translate(error) from None
