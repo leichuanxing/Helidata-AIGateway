@@ -6,6 +6,7 @@ import {formatDate} from '../ui/branding'
 import {blankBalanceRoute,routePayload,balanceStrategies,balanceTypes,matchesBalanceType,type BalanceNode} from '../ui/balanceRoutes'
 const rows=ref<any[]>([]),options=ref<any[]>([]),q=ref(''),page=ref(1),total=ref(0),loading=ref(false),error=ref('')
 const dialog=ref(false),editing=ref<number|null>(null),saving=ref(false),tab=ref('basic'),form=reactive(blankBalanceRoute())
+const availableModelTypes=computed(()=>Object.fromEntries(Object.entries(balanceTypes).filter(([value])=>value!=='reasoning'||editing.value!==null)))
 const monitoring=ref(false),detail=ref<any>(null),hours=ref(24),monitorLoading=ref(false),auto=ref(true),checking=ref<number|null>(null)
 const stateLabels:Record<string,string>={healthy:'健康',unknown:'待验证',unhealthy:'异常',disabled:'已禁用',cooling:'冷却中',probe:'等待探测',unavailable:'供应商不可用'}
 const choices=computed(()=>options.value.filter(o=>matchesBalanceType(form.model_type,o.model_type)))
@@ -36,7 +37,7 @@ onMounted(load)
 <el-drawer v-model="dialog" :title="editing?'编辑路由组':'新增路由组'" size="min(1000px, 96vw)" :close-on-click-modal="!saving">
 <el-tabs v-model="tab"><el-tab-pane label="基础配置" name="basic"><el-form label-position="top" class="route-grid">
 <el-form-item label="路由组名称" required><el-input v-model="form.name" maxlength="80"/></el-form-item><el-form-item label="统一模型名称" required><el-input v-model="form.model_name" :disabled="!!editing" maxlength="100" placeholder="例如 company-chat"/></el-form-item>
-<el-form-item label="模型类型"><el-select v-model="form.model_type" :disabled="!!editing"><el-option v-for="(label,value) in balanceTypes" :key="value" :value="value" :label="label"/></el-select></el-form-item><el-form-item label="路由状态"><el-switch v-model="form.status" active-value="enabled" inactive-value="disabled"/></el-form-item>
+<el-form-item label="模型类型"><el-select v-model="form.model_type" :disabled="!!editing"><el-option v-for="(label,value) in availableModelTypes" :key="value" :value="value" :label="label"/></el-select></el-form-item><el-form-item label="路由状态"><el-switch v-model="form.status" active-value="enabled" inactive-value="disabled"/></el-form-item>
 <el-form-item label="调度策略"><el-select v-model="form.strategy"><el-option v-for="(label,value) in balanceStrategies" :key="value" :value="value" :label="label"/></el-select></el-form-item><el-form-item label="路由组最大并发"><el-input-number v-model="form.max_concurrency" :min="1" :max="10000"/><span class="unit">个请求</span></el-form-item>
 <el-form-item label="备注" class="span-two"><el-input v-model="form.description" type="textarea" :rows="3" maxlength="2000"/></el-form-item></el-form><el-alert type="info" :closable="false" title="保存后使用统一模型名称调用现有 /v1 接口。普通用户需在模型组中获得此名称的授权；节点仅关联现有供应商实例，不复制密钥。"/></el-tab-pane>
 <el-tab-pane label="模型节点" name="nodes"><div class="toolbar"><el-select v-model="addMapping" filterable placeholder="选择现有供应商模型实例" style="flex:1"><el-option v-for="o in choices" :key="o.mapping_id" :value="o.mapping_id" :disabled="selectedMappings.has(o.mapping_id)" :label="o.provider_name+' · '+o.logical_model+' → '+o.upstream_model"/></el-select><el-button :disabled="!addMapping||form.nodes.length>=100" @click="add">添加节点</el-button></div>
