@@ -30,6 +30,9 @@ async def provider(db,provider_id,lock=False):
 
 
 async def canonical(db,name,model_type,provider_id=None,mapping_id=None):
+    from app.models.balance import BalancedRoute
+    if await db.scalar(select(BalancedRoute.id).where(BalancedRoute.model_name==name)):
+        raise APIError(409,'BALANCE_NAME_CONFLICT','负载均衡统一模型不能配置直接上游映射')
     from app.models.routing import RouteConfig
     if await db.scalar(select(RouteConfig.id).where(RouteConfig.virtual_model==name)):
         raise APIError(409,'ROUTE_NAME_CONFLICT','虚拟模型不能配置上游映射')

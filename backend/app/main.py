@@ -53,7 +53,9 @@ async def lifespan(app):
     compliance_replay=asyncio.create_task(compliance_logs.replay())
     replay=asyncio.create_task(call_log.replay_loop())
     sampler=asyncio.create_task(dashboard_live.sample_loop())
-    workers = [external_worker, operations_worker, backup_worker, vectorizer,
+    from app.services.balance_health import loop as balance_health_loop
+    balanced_worker=asyncio.create_task(balance_health_loop())
+    workers = [balanced_worker,external_worker, operations_worker, backup_worker, vectorizer,
                compliance_vectorizer, compliance_replay, replay, sampler]
     try:
         yield
@@ -208,3 +210,6 @@ app.include_router(chat_test_router)
 
 from app.api.admin.gateway_security import router as security_router
 app.include_router(security_router)
+
+from app.api.admin.balance_routes import router as balance_routes_router
+app.include_router(balance_routes_router)

@@ -12,6 +12,10 @@ class GatewayContext:
     original_model: str | None = None
     route_group_id: int | None = None
     route_config_id: int | None = None
+    balance_route: object = None
+    balance_node: object = None
+    balance_nodes: dict = field(default_factory=dict)
+    upstream_not_processed: bool = False
     first_effective: float | None = None
     generation_end: float | None = None
     generation_start: float | None = None

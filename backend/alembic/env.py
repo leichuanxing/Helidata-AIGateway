@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
 from app.models.user import Base
-from app.models import quota,call_log,usage,routing,compliance,backup
+from app.models import quota,call_log,usage,routing,compliance,backup,balance
 
 
 def migrate(connection):

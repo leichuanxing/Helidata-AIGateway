@@ -1,4 +1,4 @@
-export type CatalogModel={logical_model:string;model_type:string;position:number;configured:boolean;virtual:boolean}
+export type CatalogModel={logical_model:string;model_type:string;position:number;configured:boolean;virtual:boolean;balanced?:boolean}
 export type CatalogGroup={id:number;name:string;description:string;models:CatalogModel[]}
 export type ModelCategory='all'|'text'|'multimodal'|'image'|'vector'|'rerank'
 export function category(type:string):Exclude<ModelCategory,'all'>{

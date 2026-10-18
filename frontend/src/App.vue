@@ -24,6 +24,7 @@ const links=computed(()=>portalMode.value?[
   {to:'/admin/users',label:'用户',icon:'users'},
   {to:'/admin/user-groups',label:'用户组',icon:'users'},
   {to:'/admin/smart-route',label:'智能路由',icon:'route'},
+  {to:'/admin/balance-routes',label:'负载均衡路由',icon:'route'},
   {to:'/admin/compliance/words',label:'内容合规',icon:'shield'},
   {to:'/admin/usage',label:'用量统计',icon:'chart'},
   {to:'/admin/call-logs',label:'调用日志',icon:'file'},

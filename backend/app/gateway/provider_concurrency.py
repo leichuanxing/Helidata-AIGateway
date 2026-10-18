@@ -1,6 +1,6 @@
 """Atomic account slots with expiry and renewal for long streams."""
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, suppress,AsyncExitStack
 from uuid import uuid4
 from redis.exceptions import RedisError
 from app.core.redis import redis_client
@@ -61,7 +61,12 @@ async def acquire(ctx):
             ctx.provider_lease_lost=True
             owner.cancel()
     task=asyncio.create_task(renew())
-    try: yield
+    try:
+        async with AsyncExitStack() as resources:
+            if getattr(ctx,'balance_node',None):
+                from app.gateway.balanced_routing import node_lease
+                await resources.enter_async_context(node_lease(ctx))
+            yield
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError): await task

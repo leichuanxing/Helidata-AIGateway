@@ -6,6 +6,9 @@ from app.providers.operations import KINDS,TEXT,compatible
 
 
 async def routes(db,ctx):
+    from app.gateway.balanced_routing import resolve
+    balanced=await resolve(db,ctx)
+    if balanced is not None:return balanced
     groups=await allowed_groups(db,ctx.group.id)
     if ctx.route_group_id is not None:
         from app.models.routing import RouteConfig

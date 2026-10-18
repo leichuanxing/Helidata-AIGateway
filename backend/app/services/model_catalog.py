@@ -42,19 +42,21 @@ async def catalog(db,user_group_id):
     from app.services.group_access import resolve_group
     access=await resolve_group(db,user_group_id)
     unrestricted=bool(access and access.status=='enabled' and access.model_access=='all')
+    from app.services.balance_catalog import available as balanced_available
+    balanced=await balanced_available(db)
     extra=[]
     if unrestricted:
         rows=(await db.execute(eligible_query())).all()
-        names={mapping.logical_model for mapping,provider in rows}
+        names={mapping.logical_model for mapping,provider in rows}|set(balanced)
         models=(await db.scalars(select(LogicalModel).where(LogicalModel.name.in_(names)).order_by(LogicalModel.name))).all()
-        extra=[{'id':0,'name':'全部模型','description':'','models':[{'logical_model':model.name,'model_type':model.model_type,'position':i,'configured':True,'virtual':False} for i,model in enumerate(models)]}]
+        extra=[{'id':0,'name':'全部模型','description':'','models':[{'logical_model':model.name,'model_type':model.model_type,'position':i,'configured':True,'virtual':False,'balanced':model.name in balanced} for i,model in enumerate(models)]}]
     groups=await allowed_groups(db,user_group_id)
     ids=[g.id for g in groups]
     if not ids: return extra
     members=(await db.execute(select(ModelGroupModel,LogicalModel).join(LogicalModel,LogicalModel.name==ModelGroupModel.logical_model)
         .where(ModelGroupModel.model_group_id.in_(ids)).order_by(ModelGroupModel.model_group_id,ModelGroupModel.position))).all()
     eligible=(await db.execute(eligible_query().where(ProviderModelMapping.logical_model.in_([m.logical_model for m,l in members])))).all()
-    available={m.logical_model for m,p in eligible}
+    available={m.logical_model for m,p in eligible}|set(balanced)
     if unrestricted:available.update(model['logical_model'] for model in extra[0]['models'])
     from app.models.routing import RouteConfig,RouteSample,RouteVector
     virtual_query=select(RouteConfig)
@@ -81,5 +83,5 @@ async def catalog(db,user_group_id):
             if cfg.virtual_model in available and await db.get(LogicalModel,cfg.virtual_model):
                 extra[0]['models'].append({'logical_model':cfg.virtual_model,'model_type':'text','position':len(extra[0]['models']),'configured':True,'virtual':True})
     return extra+[{'id':g.id,'name':g.name,'description':g.description,'models':[{'logical_model':m.logical_model,'model_type':l.model_type,'position':m.position,
-        'configured':m.logical_model in available,'virtual':m.logical_model in virtual_names} for m,l in members if m.model_group_id==g.id]} for g in groups]
+        'configured':m.logical_model in available,'virtual':m.logical_model in virtual_names,'balanced':m.logical_model in balanced} for m,l in members if m.model_group_id==g.id]} for g in groups]
 

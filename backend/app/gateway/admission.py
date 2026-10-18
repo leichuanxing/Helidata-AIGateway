@@ -11,6 +11,7 @@ from app.core.exceptions import APIError
 from app.core.security import now
 from app.gateway import authentication,user_validation,group_validation,model_permission
 from app.gateway.provider_concurrency import RENEW,TTL,RENEW_SECONDS,key as provider_key
+from app.gateway.balanced_routing import SELECT_LUA,node_key,route_key
 
 STREAMS='gateway:streaming'
 QUEUE='gateway:queue';QUEUE_LEASES='gateway:queue:leases'
@@ -24,18 +25,18 @@ for i=1,3 do
  redis.call('ZREMRANGEBYSCORE',KEYS[i],'-inf',n)
  if redis.call('ZCARD',KEYS[i])>=tonumber(ARGV[i+1]) then room=false end
 end
-local selected=nil
-for _,p in ipairs(providers) do
- redis.call('ZREMRANGEBYSCORE',p.key,'-inf',n)
- if not selected and redis.call('ZCARD',p.key)<p.limit then selected=p end
-end
 local head=redis.call('ZRANGE',KEYS[4],0,0)[1]
+"""+SELECT_LUA+"""
 if room and selected and (not head or head==token) then
  for i=1,3 do redis.call('ZADD',KEYS[i],n+ttl,token);redis.call('EXPIRE',KEYS[i],ttl+30) end
  if ARGV[8]=='1' then redis.call('ZADD',KEYS[7],n+ttl,token);redis.call('EXPIRE',KEYS[7],ttl+30) end
  redis.call('ZADD',selected.key,n+ttl,token);redis.call('EXPIRE',selected.key,ttl+30)
+ if selected.node_key then
+  redis.call('ZADD',selected.node_key,n+ttl,token);redis.call('EXPIRE',selected.node_key,ttl+30)
+  redis.call('ZADD',selected.route_key,n+ttl,token);redis.call('EXPIRE',selected.route_key,ttl+30)
+ end
  redis.call('ZREM',KEYS[4],token);redis.call('ZREM',KEYS[5],token)
- return {1,selected.id}
+ return {1,selected.id,selected.mapping_id or 0,selected.node_id or 0}
 end
 if not redis.call('ZSCORE',KEYS[4],token) then
  if redis.call('ZCARD',KEYS[4])>=tonumber(ARGV[5]) then return {-1,0} end
@@ -49,6 +50,7 @@ return {0,0}
 class Admission:
     def __init__(self,ctx):
         self.ctx=ctx;self.token=ctx.request_id;self.pending=None;self.owned=[];self.task=None;self.waited=0
+        self.pending_mapping=None;self.pending_node=None
         self.owner=asyncio.current_task()
 
     async def refresh(self):
@@ -62,7 +64,16 @@ class Admission:
         self.pending=None;self.owned.remove(provider_key(provider_id))
         return self.token
 
+    async def take_node(self,node_id):
+        if self.pending_node!=node_id:return None
+        self.pending_node=None;self.pending_mapping=None
+        self.owned.remove(node_key(node_id));return self.token
+
     async def release_pending(self):
+        if self.pending_node is not None:
+            slot=node_key(self.pending_node);self.pending_node=None;self.pending_mapping=None
+            if slot in self.owned:self.owned.remove(slot)
+            await redis_client.zrem(slot,self.token)
         if self.pending is not None:
             slot=provider_key(self.pending);self.pending=None
             if slot in self.owned:self.owned.remove(slot)
@@ -73,7 +84,7 @@ class Admission:
             self.task.cancel()
             with suppress(asyncio.CancelledError):await self.task
             self.task=None
-        owned,self.owned=self.owned,[];self.pending=None
+        owned,self.owned=self.owned,[];self.pending=None;self.pending_mapping=None;self.pending_node=None
         async with redis_client.pipeline(transaction=False) as pipe:
             for slot in owned:pipe.zrem(slot,self.token)
             pipe.zrem(QUEUE,self.token);pipe.zrem(QUEUE_LEASES,self.token)
@@ -103,17 +114,25 @@ class Admission:
                 if not rows:raise APIError(503,'NO_AVAILABLE_PROVIDER','没有可用上游账号')
                 providers=[];seen=set()
                 for mapping,provider in rows:
-                    if provider.id in seen:continue
+                    balanced=getattr(self.ctx,'balance_route',None)
+                    if not balanced and provider.id in seen:continue
                     seen.add(provider.id)
                     limit=1 if provider.cooldown_until and provider.cooldown_until<=now() else provider.max_concurrency
-                    providers.append({'id':provider.id,'key':provider_key(provider.id),'limit':limit})
+                    item={'id':provider.id,'key':provider_key(provider.id),'limit':limit}
+                    if balanced:
+                        from app.gateway.balanced_routing import metadata
+                        item.update(metadata(self.ctx,mapping,provider))
+                    providers.append(item)
                 slots=['gateway:concurrency',f'group:{self.ctx.group.id}:concurrency',f'apikey:{self.ctx.key.id}:concurrency' if self.ctx.key else f'webchat:{self.ctx.user.id}:concurrency']
                 from app.services.group_access import concurrency_limits
                 group_limit,key_limit=concurrency_limits(self.ctx.group,cfg.max_concurrency)
                 result=await redis_client.eval(ADMIT,7,*slots,QUEUE,QUEUE_LEASES,'gateway:queue:seq',STREAMS,self.token,
-                    cfg.max_concurrency,group_limit,key_limit,cfg.queue_size,TTL,json.dumps(providers),int(bool(self.ctx.payload and self.ctx.payload.get('stream'))))
+                    cfg.max_concurrency,group_limit,key_limit,cfg.queue_size,TTL,json.dumps(providers),int(bool(self.ctx.payload and self.ctx.payload.get('stream'))),__import__('secrets').randbelow(2147483647))
                 if result[0]==1:
                     self.pending=int(result[1]);self.owned=slots+[provider_key(self.pending)]+([STREAMS] if self.ctx.payload and self.ctx.payload.get('stream') else [])
+                    if len(result)>3 and result[3]:
+                        self.pending_mapping=int(result[2]);self.pending_node=int(result[3])
+                        self.owned.extend([node_key(self.pending_node),route_key(self.ctx.balance_route.id)])
                     self.task=asyncio.create_task(self.renew());return
                 if result[0]==-1:raise APIError(429,'QUEUE_FULL','等待队列已满')
                 if self.waited+monotonic()-start>=cfg.queue_timeout:raise APIError(429,'QUEUE_TIMEOUT','等待并发名额超时')

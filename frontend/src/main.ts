@@ -50,6 +50,7 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/admin/users/:id',component:UserDetail,meta:{admin:true}},
   {path:'/admin/user-groups',component:Groups,meta:{admin:true}},
   {path:'/admin/model-groups',component:ModelGroups,meta:{admin:true}},
+  {path:'/admin/balance-routes',component:()=>import('./views/BalanceRoutes.vue'),meta:{admin:true}},
   {path:'/admin/smart-route',redirect:'/admin/smart-route/samples'},
   ...['/admin/smart-route/configs','/admin/smart-route/samples','/admin/smart-route/logs','/admin/smart-route/statistics'].map(path=>({path,component:SmartRoute,meta:{admin:true}})),
   {path:'/admin/providers',component:Providers,meta:{admin:true}},

@@ -5,14 +5,14 @@ import {api,message,sessionFetch} from '../api/client'
 import {useRouter} from 'vue-router'
 import {ACCEPT,MAX_ATTACHMENTS,MAX_ATTACHMENT_BYTES,formatBytes,readAttachment,boundedMessages} from '../utils/chatAttachments'
 import type {Attachment} from '../utils/chatAttachments'
-type Model={logical_model:string;model_type:string;configured:boolean;virtual:boolean;groups:string[]}
+type Model={logical_model:string;model_type:string;configured:boolean;virtual:boolean;balanced?:boolean;groups:string[]}
 type Turn={prompt:string;attachments:Attachment[];answer:string;reasoning:string;status:'pending'|'done'|'error'|'cancelled';error:string;requestId:string;compliance:string;usage:any;elapsed:number;rounds:number;finish:string}
 const router=useRouter(),models=ref<Model[]>([]),model=ref(''),loading=ref(false),loadError=ref('')
 const turns=ref<Turn[]>([]),prompt=ref(''),system=ref(''),temperature=ref(0.7),maxTokens=ref(5000),stream=ref(true),busy=ref(false)
 const attachments=ref<Attachment[]>([]),reading=ref(false),settingsOpen=ref(true),preview=ref<Attachment|null>(null)
 const fileInput=ref<HTMLInputElement>(),viewport=ref<HTMLElement>(),selected=computed(()=>models.value.find(m=>m.logical_model===model.value))
 const multimodal=computed(()=>selected.value?.model_type==='multimodal')
-const modelLabel=computed(()=>selected.value?.virtual?'智能路由':multimodal.value?'多模态':selected.value?.model_type==='reasoning'?'推理':'文本')
+const modelLabel=computed(()=>selected.value?.balanced?'负载均衡路由':selected.value?.virtual?'智能路由':multimodal.value?'多模态':selected.value?.model_type==='reasoning'?'推理':'文本')
 const attachmentBytes=computed(()=>attachments.value.reduce((sum,a)=>sum+a.size,0))
 let controller:AbortController|null=null,disposed=false,sequence=0
 const canSend=computed(()=>!busy.value&&!reading.value&&(!!prompt.value.trim()||attachments.value.length>0)&&selected.value?.configured&&Number.isInteger(maxTokens.value)&&maxTokens.value>=1&&maxTokens.value<=65535)
@@ -99,7 +99,7 @@ onBeforeUnmount(()=>{disposed=true;stop()})
  <div class="chat-grid" :class="{'settings-hidden':!settingsOpen}">
   <section class="panel chat-conversation" aria-label="测试对话">
    <header class="conversation-toolbar">
-    <div class="model-picker"><el-select v-model="model" filterable placeholder="选择模型开始对话" :disabled="busy||reading" class="full"><el-option v-for="item in models" :key="item.logical_model" :value="item.logical_model" :label="item.logical_model" :disabled="!item.configured"><span>{{item.logical_model}}</span><span class="model-hint">{{!item.configured?'不可用':item.virtual?'智能路由':item.model_type==='multimodal'?'多模态':item.model_type==='reasoning'?'推理':'文本'}}</span></el-option></el-select><el-tag v-if="selected" size="small" effect="plain">{{modelLabel}}</el-tag></div>
+    <div class="model-picker"><el-select v-model="model" filterable placeholder="选择模型开始对话" :disabled="busy||reading" class="full"><el-option v-for="item in models" :key="item.logical_model" :value="item.logical_model" :label="item.logical_model" :disabled="!item.configured"><span>{{item.logical_model}}</span><span class="model-hint">{{!item.configured?'不可用':item.balanced?'负载均衡路由':item.virtual?'智能路由':item.model_type==='multimodal'?'多模态':item.model_type==='reasoning'?'推理':'文本'}}</span></el-option></el-select><el-tag v-if="selected" size="small" effect="plain">{{modelLabel}}</el-tag></div>
     <el-button :disabled="busy||reading||(!turns.length&&!attachments.length&&!prompt)" @click="clear">新对话</el-button>
    </header>
    <div ref="viewport" class="conversation-scroll" aria-live="polite" :aria-busy="busy">
@@ -155,4 +155,5 @@ onBeforeUnmount(()=>{disposed=true;stop()})
 @media(max-width:1100px){.chat-grid{grid-template-columns:minmax(0,1fr) 260px}}
 @media(max-width:800px){.chat-grid{grid-template-columns:1fr}.chat-settings{height:auto;min-height:0;display:block}.chat-settings .provider-link{margin-top:12px}.chat-composer{padding:12px}}
 
-.parameter-form :deep(.el-form-item){margin-bottom:10px}.parameter-form :deep(.el-form-item__label){margin-bottom:4px}.settings-title{min-height:32px;margin-bottom:10px;padding-bottom:10px}.model-groups{margin-bottom:10px}.chat-settings .session-note{padding-top:8px;margin-bottom:8px}.chat-settings>.el-alert{margin-bottom:8px}.chat-settings .provider-link{padding-top:8px}.parameter-form :deep(.el-textarea__inner){min-height:64px!important}.chat-settings{scrollbar-width:thin}`n</style>
+.parameter-form :deep(.el-form-item){margin-bottom:10px}.parameter-form :deep(.el-form-item__label){margin-bottom:4px}.settings-title{min-height:32px;margin-bottom:10px;padding-bottom:10px}.model-groups{margin-bottom:10px}.chat-settings .session-note{padding-top:8px;margin-bottom:8px}.chat-settings>.el-alert{margin-bottom:8px}.chat-settings .provider-link{padding-top:8px}.parameter-form :deep(.el-textarea__inner){min-height:64px!important}.chat-settings{scrollbar-width:thin}
+</style>

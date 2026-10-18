@@ -62,6 +62,26 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         parsed=[item async for item in events(chunks())]
         self.assertIn(('message','中文\nsecond'),parsed)
 
+    async def test_stream_lease_loss_closes_even_after_original_owner_returns(self):
+        started=asyncio.Event();released=[]
+        class Upstream:
+            async def aiter_bytes(self):
+                started.set();await asyncio.Event().wait();yield b''
+        @asynccontextmanager
+        async def lease():
+            try:yield
+            finally:released.append(True)
+        stack=AsyncExitStack();await stack.enter_async_context(lease())
+        ctx=GatewayContext('req_lease_lost','chat','fixture');response=GatewayStreamingResponse(ctx,Upstream(),stack)
+        async def receive():await asyncio.Event().wait()
+        async def send(message):pass
+        with patch('app.gateway.provider_health.finish',AsyncMock()),patch('app.gateway.call_log.write',AsyncMock()) as log:
+            task=asyncio.create_task(response({'type':'http','asgi':{'spec_version':'2.4'}},receive,send))
+            await started.wait();ctx.lease_error='CONCURRENCY_UNAVAILABLE'
+            await asyncio.wait_for(task,1)
+            log.assert_awaited_once_with(ctx,'failure','CONCURRENCY_UNAVAILABLE')
+        self.assertEqual(released,[True])
+
     async def test_incomplete_sse_is_not_success(self):
         async def chunks():yield b'data: {"partial":true}'
         with self.assertRaises(ProviderFailure) as caught:

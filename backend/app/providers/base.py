@@ -8,8 +8,9 @@ from app.providers.pool import pools, timeout as request_timeout, PoolCapacityEr
 
 
 class ProviderFailure(Exception):
-    def __init__(self,code,status=None,network=False,auth='unknown',latency_ms=0):
+    def __init__(self,code,status=None,network=False,auth='unknown',latency_ms=0,safe_to_retry=False):
         self.code,self.status,self.network,self.auth,self.latency_ms=code,status,network,auth,latency_ms
+        self.safe_to_retry=safe_to_retry
         super().__init__(code)
 
 
@@ -55,7 +56,9 @@ class BaseProvider(ABC):
         except ProviderFailure:
             raise
         except (PoolCapacityError,httpx.PoolTimeout):
-            raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED') from None
+            raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED',safe_to_retry=True) from None
+        except (httpx.ConnectError,httpx.ConnectTimeout) as error:
+            raise ProviderFailure('UPSTREAM_TIMEOUT' if isinstance(error,httpx.ConnectTimeout) else 'UPSTREAM_NETWORK_ERROR',safe_to_retry=True) from None
         except httpx.TimeoutException:
             raise ProviderFailure('UPSTREAM_TIMEOUT',status,status is not None,'unknown',round((time.monotonic()-start)*1000)) from None
         except (httpx.HTTPError,OSError):
@@ -74,7 +77,9 @@ class BaseProvider(ABC):
                 raise ProviderFailure('UPSTREAM_AUTH_FAILED' if response.status_code in (401,403) else 'UPSTREAM_HTTP_ERROR',response.status_code)
             if response.headers.get('content-type','').split(';')[0].strip().lower()!='text/event-stream':raise ProviderFailure('UPSTREAM_INVALID_RESPONSE',response.status_code)
             return response
-        except (PoolCapacityError,httpx.PoolTimeout):raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED') from None
+        except (PoolCapacityError,httpx.PoolTimeout):raise ProviderFailure('UPSTREAM_POOL_EXHAUSTED',safe_to_retry=True) from None
+        except (httpx.ConnectError,httpx.ConnectTimeout) as error:
+            raise ProviderFailure('UPSTREAM_TIMEOUT' if isinstance(error,httpx.ConnectTimeout) else 'UPSTREAM_NETWORK_ERROR',safe_to_retry=True) from None
         except httpx.TimeoutException:raise ProviderFailure('UPSTREAM_TIMEOUT') from None
         except httpx.HTTPError:raise ProviderFailure('UPSTREAM_NETWORK_ERROR') from None
 

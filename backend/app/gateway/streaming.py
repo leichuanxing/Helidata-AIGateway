@@ -120,6 +120,12 @@ class GatewayStreamingResponse(StreamingResponse):
                     finally:
                         group.cancel_scope.cancel()
                 group.start_soon(emit)
+                async def watch_leases():
+                    while not self.ctx.provider_lease_lost and not self.ctx.lease_error:
+                        await asyncio.sleep(.2)
+                    self.outcome,self.code='failure',self.ctx.lease_error or 'SCHEDULER_UNAVAILABLE'
+                    group.cancel_scope.cancel()
+                group.start_soon(watch_leases)
                 await self.listen_for_disconnect(receive)
                 self.outcome, self.code = 'client_cancelled', 'CLIENT_DISCONNECTED'
                 group.cancel_scope.cancel()

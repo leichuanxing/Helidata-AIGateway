@@ -20,6 +20,10 @@ def state(provider):
     return 'Available'
 
 async def finish(ctx,outcome,code=None):
+    if getattr(ctx,'balance_node',None):
+        from app.services.balance_health import finish as balance_finish
+        await balance_finish(ctx,outcome,code)
+        return  # Route-local failures must not quarantine unrelated account models.
     if outcome=='client_cancelled' or ctx.operation not in INFERENCE: return
     if code in ('UPSTREAM_REQUEST_REJECTED','CLIENT_DISCONNECTED','UPSTREAM_POOL_EXHAUSTED'): return
     if ctx.provider is None or ctx.adapter is None: return
