@@ -22,6 +22,8 @@ class ProviderManagementHTTPTests(unittest.IsolatedAsyncioTestCase):
             def do_GET(self):
                 calls.append(('GET',self.path))
                 if self.headers.get('Authorization')!='Bearer fixture-key':return self.answer(401,{'error':{'message':'invalid'}})
+                if self.path.startswith('/api/v1/models'):
+                    return self.answer(200,{'success':True,'output':{'models':[{'model':'fixture-rerank'}],'total':1}})
                 return self.answer(200,{'object':'list','data':[{'id':'fixture','object':'model'}]})
             def do_POST(self):
                 calls.append(('POST',self.path))
@@ -47,6 +49,12 @@ class ProviderManagementHTTPTests(unittest.IsolatedAsyncioTestCase):
                 draft={k:v for k,v in payload.items() if k not in ('model_mappings','default_test_model')}
                 discovered=await c.post('/api/admin/providers/discover-models',json=draft)
                 self.assertEqual(discovered.status_code,200);self.assertEqual(discovered.json()['data']['models'],[{'id':'fixture'}])
+                native_draft={**draft,'provider_type':'aliyun','protocol_type':'rerank','base_url':f'http://127.0.0.1:{server.server_port}/api/v1',
+                    'protocol_config':{'openai-rerank':{}}}
+                native_found=await c.post('/api/admin/providers/discover-models',json=native_draft)
+                self.assertEqual(native_found.status_code,200,native_found.text[:200])
+                self.assertEqual(native_found.json()['data']['models'],[{'id':'fixture-rerank'}])
+                self.assertEqual(calls[-1],('GET','/api/v1/models?page_no=1&page_size=100'))
                 connected=await c.post(route+'/test');self.assertEqual(connected.status_code,200)
                 self.assertTrue(connected.json()['data']['success'])
                 transferred=await c.patch(route,json={'provider_type':'vllm'})

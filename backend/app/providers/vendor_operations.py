@@ -1,9 +1,36 @@
 """Bounded vendor-specific rerank/image wire conversion; no extra billable calls."""
-import time
+import asyncio,time
 from app.providers.base import CustomOpenAIProvider,ProviderFailure
 from app.core.config import get_settings
 
 class AliyunProvider(CustomOpenAIProvider):
+    async def list_models(self):
+        if not self.base_url.endswith('/api/v1'):
+            return await super().list_models()
+        # Native DashScope differs from the OpenAI-compatible catalog. Preserve
+        # the configured origin, paginate completely and fail instead of silently
+        # marking a model missing from a truncated first page.
+        models=[];seen=set()
+        try:
+            async with asyncio.timeout(10):
+                for page in range(1,101):
+                    result=await self.request('GET',f'/models?page_no={page}&page_size=100')
+                    if 'data' in result and page==1:return self.parse_models(result)
+                    output=result.get('output')
+                    if result.get('success') is False or not isinstance(output,dict):raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+                    rows=output.get('models');total=output.get('total')
+                    if not isinstance(rows,list) or any(not isinstance(row,dict) or not isinstance(row.get('model'),str) or not row['model'].strip() for row in rows):
+                        raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+                    if total is not None and (type(total) is not int or not 0<=total<=10000):raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+                    before=len(seen)
+                    for row in rows:
+                        name=row['model']
+                        if name not in seen:seen.add(name);models.append({'id':name})
+                    if total is not None and len(seen)>=total or total is None and len(rows)<100:return models
+                    if not rows or len(seen)==before:raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+                raise ProviderFailure('UPSTREAM_RESPONSE_TOO_LARGE')
+        except TimeoutError:raise ProviderFailure('UPSTREAM_TIMEOUT') from None
+
     async def rerank(self,payload):
         # Preserve the configured origin/private proxy; never send credentials to a
         # different host while translating the old compatible-mode base path.
