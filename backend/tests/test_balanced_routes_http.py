@@ -215,8 +215,11 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     failed=await api('POST',route_path+f"/nodes/{node_a['id']}/check",{})
                     self.assertEqual(failed['code'],'BALANCE_NODE_INCOMPATIBLE')
                     for p in providers:await patch_provider(p['id'],{'protocol_config':p['protocol_config']})
+                    # Isolate mapping propagation from the round-robin cursor.
+                    await patch_provider(bid,{'status':'disabled'})
                     await put_mapping(upstream='renamed-a');start=len(calls)
                     self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'renamed-a')
+                    await patch_provider(bid,{'status':'enabled'})
                     await put_mapping()
                     # Probe the operation's endpoint, not the account's different primary protocol.
                     split=await api('POST','admin/providers',{'name':prefix+'-split','provider_type':'custom_openai','protocol':'anthropic',

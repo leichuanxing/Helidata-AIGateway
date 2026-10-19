@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {formatDate} from '../ui/branding'
 import {computed,ref,watch,nextTick,onMounted,onBeforeUnmount,type ComponentPublicInstance} from 'vue'
-import * as echarts from 'echarts'
+import * as echarts from '../ui/charts'
 import {dark,chartTheme} from '../ui/preferences'
 import {useRouter} from 'vue-router'
 import {api,message} from '../api/client'

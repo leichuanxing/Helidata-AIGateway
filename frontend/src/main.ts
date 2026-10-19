@@ -1,7 +1,7 @@
-import {createApp} from 'vue'
+import {createApp,h} from 'vue'
 import {createPinia} from 'pinia'
 import {createRouter,createWebHistory} from 'vue-router'
-import ElementPlus from 'element-plus'
+import {ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip,ElLoading,ElConfigProvider} from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
@@ -79,7 +79,10 @@ router.afterEach((to,from)=>{
   if(to.path!==from.path)window.scrollTo({top:0,behavior:'instant'})
 })
 router.onError(()=>{navigating.value=false})
-createApp(App).component('PageHeader',PageHeader).component('EmptyState',EmptyState).component('UiIcon',UiIcon).use(pinia).use(router).use(ElementPlus,{locale:zhCn}).mount('#app')
+const app=createApp({render:()=>h(ElConfigProvider,{locale:zhCn},()=>h(App))})
+for(const component of [ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip])app.use(component)
+app.use(ElLoading)
+app.component('PageHeader',PageHeader).component('EmptyState',EmptyState).component('UiIcon',UiIcon).use(pinia).use(router).mount('#app')
 
 
 

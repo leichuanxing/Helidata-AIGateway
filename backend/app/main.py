@@ -146,13 +146,14 @@ async def validation(request,error):
 @app.exception_handler(Exception)
 async def unexpected(request,error):
     logging.getLogger(__name__).error('Request failed [%s] %s',type(error).__name__,request.state.request_id,extra={'request_id':request.state.request_id})
-    from sqlalchemy.exc import DBAPIError, TimeoutError as PoolTimeout
+    from sqlalchemy.exc import DBAPIError, TimeoutError as PoolTimeout,IntegrityError,ProgrammingError,DataError
+    from app.core.database import DatabaseUnavailable
     from redis.exceptions import RedisError
-    unavailable=isinstance(error,(DBAPIError,PoolTimeout,RedisError))
+    unavailable=isinstance(error,(DatabaseUnavailable,DBAPIError,PoolTimeout,RedisError)) and not isinstance(error,(IntegrityError,ProgrammingError,DataError))
     status=503 if unavailable else 500
     code='DEPENDENCY_UNAVAILABLE' if unavailable else 'INTERNAL_ERROR'
     request.state.failure_code=code
-    return JSONResponse(error_body(request,code,'服务暂不可用',status),status_code=status,headers={'X-Request-ID':request.state.request_id,'Cache-Control':'no-store'})
+    return JSONResponse(error_body(request,code,'服务暂不可用',status),status_code=status,headers={'X-Request-ID':request.state.request_id,'Cache-Control':'no-store',**({'Retry-After':'2'} if unavailable else {})})
 
 
 app.include_router(health_router)
