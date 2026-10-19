@@ -82,7 +82,39 @@ class ProviderManagementHTTPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(edited.status_code,200)
                 rejected=await c.post(route+'/test');self.assertEqual(rejected.status_code,200)
                 self.assertFalse(rejected.json()['data']['success']);self.assertEqual(rejected.json()['data']['error_code'],'UPSTREAM_AUTH_FAILED')
+                rejected_draft=await c.post('/api/admin/providers/discover-models',json={**draft,'api_key':'wrong-fixture-key'})
+                self.assertEqual(rejected_draft.status_code,502)
+                self.assertIn('鉴权失败',rejected_draft.json()['error']['message'])
+                rejected_saved=await c.post(route+'/discover-models')
+                self.assertEqual(rejected_saved.status_code,502)
+                self.assertEqual(rejected_saved.json()['error']['message'],rejected_draft.json()['error']['message'])
+                self.assertNotIn('wrong-fixture-key',rejected_saved.text)
                 self.assertEqual((await c.delete(route)).status_code,200)
+                # Detail-editor operations preserve the rerank category and keep
+                # default-test-model references consistent with live mappings.
+                rank_name=name+'-rank'
+                rank_payload={**payload,'name':rank_name,'protocol_type':'rerank','protocol_config':{'openai-rerank':{}},
+                    'default_test_model':rank_name,'model_mappings':[{'logical_model':rank_name,'upstream_model':'fixture','model_type':'rerank'}]}
+                rank=await c.post('/api/admin/providers',json=rank_payload);self.assertEqual(rank.status_code,201,rank.text[:200])
+                rank_route='/api/admin/providers/'+str(rank.json()['data']['id'])
+                added=await c.post(rank_route+'/model-mappings',json={'logical_model':rank_name+'2','upstream_model':'fixture','model_type':'rerank'})
+                self.assertEqual(added.status_code,201)
+                invalid=await c.post(rank_route+'/model-mappings',json={'logical_model':rank_name+'-wrong','upstream_model':'fixture','model_type':'embedding'})
+                self.assertEqual(invalid.status_code,422)
+                detail=(await c.get(rank_route)).json()['data'];first=next(m for m in detail['models'] if m['logical_model']==rank_name)
+                self.assertNotIn('fixture-key',json.dumps(detail));self.assertNotIn('api_key_encrypted',detail)
+                first_path=rank_route+'/model-mappings/'+str(first['id'])
+                renamed={'logical_model':rank_name+'-renamed','upstream_model':'fixture','model_type':'rerank','status':'enabled'}
+                self.assertEqual((await c.put(first_path,json=renamed)).status_code,200)
+                self.assertEqual((await c.get(rank_route)).json()['data']['default_test_model'],renamed['logical_model'])
+                self.assertEqual((await c.put(first_path,json={**renamed,'status':'disabled'})).status_code,200)
+                self.assertIsNone((await c.get(rank_route)).json()['data']['default_test_model'])
+                self.assertEqual((await c.delete(first_path)).status_code,200)
+                last_path=rank_route+'/model-mappings/'+str(added.json()['data']['id'])
+                self.assertEqual((await c.delete(last_path)).status_code,409)
+                self.assertEqual((await c.delete(rank_route)).status_code,200)
+                recreated=await c.post('/api/admin/providers',json=rank_payload);self.assertEqual(recreated.status_code,201)
+                self.assertEqual((await c.delete('/api/admin/providers/'+str(recreated.json()['data']['id']))).status_code,200)
                 print('PASS real HTTP management with loopback fixture: discovery, connection, consent, batch generation/logs, auth failure, delete; NOT real supplier verification')
         finally:
             server.shutdown();server.server_close();thread.join(timeout=2)

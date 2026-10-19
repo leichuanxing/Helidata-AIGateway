@@ -32,6 +32,11 @@ export function automaticConnection(type:ProviderType|undefined,plan:string,cate
 }
 
 export function mappingType(category:string|null){return category==='rerank'?'rerank':category==='multimodal'?'multimodal':category==='image'?'image':category==='vector'?'embedding':'text'}
+export function mappingAllowed(category:string|null|undefined,kind:string){
+  if(!category)return true
+  if(['rerank','multimodal','image'].includes(category))return kind===mappingType(category)
+  return category==='vector'?['embedding','rerank'].includes(kind):category==='text'&&['text','reasoning','multimodal'].includes(kind)
+}
 export function syncSharedUrls(urls:Record<string,string>,previous:string,value:string){
   for(const protocol of Object.keys(urls))if(urls[protocol]===previous)urls[protocol]=value
 }

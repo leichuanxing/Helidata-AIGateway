@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import {ref,computed,watch} from 'vue'
 import {ElMessage} from 'element-plus'
-import {mappingType} from '../ui/providerPresets'
+import {mappingType,mappingAllowed} from '../ui/providerPresets'
 import {modelTypes} from '../api/models'
 import type {ProviderDraftMapping} from '../api/provider'
 const rows=defineModel<ProviderDraftMapping[]>({required:true})
 const props=defineProps<{models:string[];discovering:boolean;category?:string|null}>()
 const emit=defineEmits<{discover:[]}>(),selected=ref<string[]>([])
 const query=ref(''),defaultType=computed(()=>mappingType(props.category||null))
-const allowed=computed(()=>Object.entries(modelTypes).filter(([value])=>!props.category||(props.category==='rerank'?value==='rerank':props.category==='multimodal'?value==='multimodal':props.category==='text'?['text','reasoning','multimodal'].includes(value):props.category==='image'?value==='image':['embedding','rerank'].includes(value))))
+const allowed=computed(()=>Object.entries(modelTypes).filter(([value])=>mappingAllowed(props.category,value)))
 const filtered=computed(()=>rows.value.map((m,i)=>({m,i})).filter(({m})=>!query.value||m.logical_model.toLowerCase().includes(query.value.toLowerCase())||m.upstream_model.toLowerCase().includes(query.value.toLowerCase())))
 watch(()=>props.models,()=>{selected.value=[]})
 function add(){if(rows.value.length>=100){ElMessage.warning('最多100个模型映射');return}query.value='';rows.value.push({logical_model:'',upstream_model:'',model_type:defaultType.value,status:'enabled'})}

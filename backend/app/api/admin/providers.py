@@ -14,6 +14,7 @@ from app.schemas.provider import ProviderCreate,ProviderEdit,ProviderDiscovery,p
 from app.services.provider_crypto import encrypt_secret,decrypt_secret
 from app.services.sessions import audit
 from app.gateway.provider_concurrency import loads
+from app.services.provider_discovery import discover_models,discovery_message
 router=APIRouter(prefix='/api/admin/providers',tags=['模型供应商'])
 FIELDS=('name','provider_type','protocol','protocol_type','account_type','base_url','protocol_config','default_test_model','proxy','priority','max_concurrency','status','remark')
 ERROR_MESSAGES={
@@ -111,14 +112,11 @@ async def discover_draft(body: ProviderDiscovery,request: Request,actor=Depends(
     adapter=build_adapter(draft,key)
     await db.commit()
     try:
-        models=await adapter.list_models()
-        names=list(dict.fromkeys(m['id'] for m in models))
-        if any(not n.strip() or len(n)>200 or any(ord(c)<32 or ord(c)==127 for c in n) for n in names):
-            raise ProviderFailure('UPSTREAM_INVALID_RESPONSE')
+        names=await discover_models(adapter)
     except ProviderFailure as error:
         audit(db,actor.id,'discover_provider_draft',body.provider_id,request.client.host,result='failure',resource_type='provider')
         await db.commit()
-        raise APIError(502,error.code,'模型发现失败，请检查账号连接信息') from None
+        raise APIError(502,error.code,discovery_message(error)) from None
     audit(db,actor.id,'discover_provider_draft',body.provider_id,request.client.host,resource_type='provider')
     await db.commit()
     return {'data':{'models':[{'id':n} for n in names],'latency_ms':adapter.latency_ms,'http_status':adapter.http_status}}

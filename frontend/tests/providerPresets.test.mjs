@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {accountPreset,categoryProtocols,providerCategoryOptions,categoryBaseUrl,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
+import {mappingType,mappingAllowed,accountPreset,categoryProtocols,providerCategoryOptions,categoryBaseUrl,automaticConnection,adaptMappingTypes,syncSharedUrls,validServiceUrl,validProxyUrl} from '../src/ui/providerPresets.ts'
 
 test('normal providers automatically select all supported category protocols and dedicated URLs',()=>{
   const type={base_url:'https://api.example/v1',supported_protocols:['openai-completions','openai-responses','anthropic-messages','openai-embeddings'],protocol_urls:{'openai-responses':'https://api.example','anthropic-messages':'https://api.example/anthropic/v1'}}
@@ -81,4 +81,13 @@ test('complete API base URLs reject endpoints and unsafe input',()=>{
   for(const value of ['https://example.com/v1','http://127.0.0.1:11434','https://example.com/api/coding/paas/v4'])assert.equal(validServiceUrl(value),true)
   for(const value of ['','ftp://example.com','https://user:secret@example.com','https://example.com?key=secret','https://example.com/v1/messages','https://example.com/v1/chat/completions','https://example.com/v1/responses','https://example.com/api/tags','https://example.com/a b'])assert.equal(validServiceUrl(value),false,value)
   assert.equal(validProxyUrl(''),true);assert.equal(validProxyUrl('http://proxy.example:8080'),true);assert.equal(validProxyUrl('http://proxy.example/path'),false)
+})
+
+test('account editor and detail mapping editor agree on rerank and other categories',()=>{
+  const kinds=['text','reasoning','multimodal','embedding','rerank','image']
+  for(const [category,expected,defaultKind] of [['rerank',['rerank'],'rerank'],['multimodal',['multimodal'],'multimodal'],['image',['image'],'image'],['vector',['embedding','rerank'],'embedding'],['text',['text','reasoning','multimodal'],'text']]){
+    assert.deepEqual(kinds.filter(kind=>mappingAllowed(category,kind)),expected)
+    assert.equal(mappingType(category),defaultKind)
+  }
+  assert.deepEqual(kinds.filter(kind=>mappingAllowed(null,kind)),kinds)
 })

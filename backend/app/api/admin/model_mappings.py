@@ -13,6 +13,7 @@ from app.providers.base import ProviderFailure
 from app.services.provider_crypto import decrypt_secret
 from app.services.sessions import audit
 from app.services.provider_rules import category_mapping,protect_removed
+from app.services.provider_discovery import discover_models,discovery_message
 from sqlalchemy import func
 router=APIRouter(prefix='/api/admin',tags=['模型映射'])
 
@@ -64,14 +65,11 @@ async def discover(provider_id: int,request: Request,actor=Depends(administrator
     adapter=build_adapter(row,decrypt_secret(row.api_key_encrypted))
     await db.commit()
     try:
-        rows=await adapter.list_models()
-        names=list(dict.fromkeys(r['id'] for r in rows))
-        if any(not n.strip() or len(n)>200 or any(ord(c)<32 for c in n) for n in names):
-            raise ProviderFailure('UPSTREAM_INVALID_RESPONSE',adapter.http_status,True,'unknown',adapter.latency_ms)
+        names=await discover_models(adapter)
     except ProviderFailure as error:
         audit(db,actor.id,'discover_models',provider_id,request.client.host,result='failure',resource_type='provider')
         await db.commit()
-        raise APIError(502,error.code,'上游模型发现失败，可检查连接或手工输入真实模型名') from None
+        raise APIError(502,error.code,discovery_message(error)) from None
     await db.refresh(row)
     if row.config_version!=version or row.status!='enabled' or row.deleted_at:
         raise APIError(409,'PROVIDER_CHANGED','发现期间账号配置已变化，请重新发现')
