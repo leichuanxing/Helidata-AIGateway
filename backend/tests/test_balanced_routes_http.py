@@ -19,7 +19,8 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
             def do_GET(self):
                 gets.append(self.path)
                 if self.path.startswith('/bad/'):return self.answer(401,{'error':{'message':'fixture wrong endpoint'}})
-                self.answer(200,{'data':[{'id':'a'},{'id':'b'}]})
+                if self.path.startswith('/transient/'):return self.answer(503,{'error':{'message':'temporary unavailable'}})
+                self.answer(200,{'data':[{'id':'a'},{'id':'b'},{'id':'split'}]})
             def do_POST(self):
                 body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));node=body['model'];mode=modes.get(node,'ok')
                 with lock:calls.append((node,self.path,bool(body.get('stream'))));seen_content[node]=body.get('messages');seen_payload[node]=body
@@ -228,6 +229,26 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     split_node=(await api('GET',split_path))['nodes'][0]['id']
                     checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
                     self.assertTrue(checked['success']);self.assertEqual(gets[-1],'/correct/v1/models')
+                    self.assertTrue(checked['model_available'])
+                    # A reachable models endpoint is not proof that this model exists.
+                    await patch_provider(split['id'],{'model_mappings':[{'logical_model':prefix+'-split','upstream_model':'missing-model','model_type':'text'}]})
+                    checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
+                    self.assertFalse(checked['success']);self.assertFalse(checked['model_available'])
+                    self.assertEqual(checked['code'],'TEST_MODEL_NOT_FOUND')
+                    missing=(await api('GET',split_path))['nodes'][0]
+                    self.assertEqual(missing['failure_count'],1);self.assertIsNone(missing['cooldown_until'])
+                    await patch_provider(split['id'],{'model_mappings':[{'logical_model':prefix+'-split','upstream_model':'split','model_type':'text'}],
+                        'protocol_config':{'openai-completions':{'api_url':f'http://127.0.0.1:{server.server_port}/transient/v1'}} ,'protocol':'openai'})
+                    for attempt in range(1,4):
+                        checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
+                        self.assertFalse(checked['success'])
+                        failing=(await api('GET',split_path))['nodes'][0]
+                        self.assertEqual(failing['failure_count'],attempt)
+                        self.assertEqual(failing['cooldown_until'] is not None,attempt==3)
+                    await patch_provider(split['id'],{'protocol_config':{'openai-completions':{'api_url':f'http://127.0.0.1:{server.server_port}/correct/v1'}}})
+                    self.assertTrue((await api('POST',split_path+f'/nodes/{split_node}/check',{}))['success'])
+                    recovered_probe=(await api('GET',split_path))['nodes'][0]
+                    self.assertEqual(recovered_probe['failure_count'],0);self.assertIsNone(recovered_probe['cooldown_until'])
                     await patch_provider(split['id'],{'base_url':f'http://127.0.0.1:{server.server_port}/bad/v1','protocol_config':{'anthropic-messages':{'auth_type':'x-api-key'},'openai-completions':{}}})
                     changed=(await api('GET',split_path))['nodes'][0]
                     self.assertIsNone(changed['cooldown_until']);self.assertEqual(changed['health_status'],'unknown')

@@ -71,11 +71,13 @@ async def _probe(route_id,node_id):
         operation=operation_for(alias.model_type,provider) if alias else None
         if not alias or not matching_type(alias.model_type,mapping.model_type) or not operation:
             return {'success':False,'code':'BALANCE_NODE_INCOMPATIBLE'}
-    started=monotonic();code=None;success=False;unsupported=False
+    started=monotonic();code=None;success=False;unsupported=False;model_available=None
     try:
         async with asyncio.timeout(12):
-            adapter=build_adapter(provider,decrypt_secret(provider.api_key_encrypted),operation);await adapter.list_models()
-        success=True
+            adapter=build_adapter(provider,decrypt_secret(provider.api_key_encrypted),operation);models=await adapter.list_models()
+        model_available=mapping.upstream_model in {item['id'] for item in models}
+        success=model_available
+        if not success:code='TEST_MODEL_NOT_FOUND'
     except ProviderFailure as error:
         code=error.code;unsupported=error.status in (404,405,501) or getattr(locals().get('adapter'),'http_status',None) in (404,405,501)
     except TimeoutError:code='UPSTREAM_TIMEOUT'
@@ -92,8 +94,10 @@ async def _probe(route_id,node_id):
             row.health_status='healthy';row.failure_count=0;row.cooldown_until=None
             await db.execute(update(Provider).where(Provider.id==provider.id,Provider.config_version==provider.config_version).values(health_status='healthy',failure_count=0,cooldown_until=None))
         elif not unsupported:
-            row.health_status='unhealthy';row.failure_count+=1;row.cooldown_until=now()+timedelta(seconds=route.cooldown_seconds)
-    return {'success':success,'code':code,'latency_ms':latency,'unsupported':unsupported,'generation_tested':False}
+            row.failure_count+=1
+            if row.failure_count>=route.failure_threshold or code in ('UPSTREAM_AUTH_FAILED','UPSTREAM_RATE_LIMITED'):
+                row.health_status='unhealthy';row.cooldown_until=now()+timedelta(seconds=route.cooldown_seconds)
+    return {'success':success,'code':code,'latency_ms':latency,'unsupported':unsupported,'model_available':model_available,'generation_tested':False}
 
 async def loop():
     semaphore=asyncio.Semaphore(4)
