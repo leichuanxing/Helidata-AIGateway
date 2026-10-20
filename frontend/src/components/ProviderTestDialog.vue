@@ -24,7 +24,7 @@ async function start(all=false){
   try{
     // One request per model keeps long batches below the proxy idle timeout
     // and preserves completed results if a later model fails.
-    await runProviderTests(names,run.signal,async(name,signal)=>(await api.post('/admin/providers/'+provider.id+'/test-models',{models:[name],consent:true,image_consent:imageConsent.value,expected_config_version:provider.config_version},{signal,timeout:170000})).data.data.results,(batch)=>results.value.push(...batch))
+    await runProviderTests(names,run.signal,async(name,signal)=>(await api.post('/admin/providers/'+provider.id+'/test-models',{models:[name],consent:true,image_consent:imageConsent.value,expected_config_version:provider.config_version},{signal,timeout:0})).data.data.results,(batch)=>results.value.push(...batch))
   }
   catch(e){if(!run.signal.aborted&&!disposed)ElMessage.error(message(e))}finally{running.value=false;controller=null;if(!disposed)emit('finished')}
 }
@@ -32,7 +32,7 @@ async function start(all=false){
 <template><el-dialog v-model="visible" title="测试模型" width="760px" :close-on-click-modal="!running" :close-on-press-escape="!running" :show-close="!running">
 <p>账号：{{provider?.name}}。使用已保存配置直接调用此账号，不切换其他供应商。</p>
 <el-select v-model="selected" filterable placeholder="选择已启用模型" :disabled="running" style="width:100%"><el-option v-for="m in models" :key="m.logical_model" :value="m.logical_model" :label="m.logical_model+' → '+m.upstream_model"/></el-select>
-<p class="muted">文本测试最多输出 8 Token；向量测试使用单条短文本；图片测试会生成一张图片。测试所有模型将逐个调用所有已启用映射，用量记录在调用日志中。</p>
+<p class="muted">文本测试最多输出 8 Token；向量测试使用单条短文本；图片测试会生成一张图片，等待上限遵循性能设置中的非流式超时。测试所有模型将逐个调用所有已启用映射，用量记录在调用日志中。</p>
 <el-checkbox v-model="consent" :disabled="running">我确认发起真实调用，可能产生用量和费用</el-checkbox>
 <el-checkbox v-if="models.some(m=>m.model_type==='image')" v-model="imageConsent" :disabled="running">我确认文生图测试将真实生成图片并可能产生费用</el-checkbox>
 <el-alert v-if="!models.length" title="此账号没有已启用的模型映射，请先配置并启用模型。" type="info" :closable="false"/>

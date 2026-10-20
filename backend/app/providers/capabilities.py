@@ -12,7 +12,7 @@ def enrich_capabilities(catalog):
     catalog['gemini']['operations']=['chat','messages','embeddings','images']
     notes={
         'openai':{'image':'使用支持 Images API 的图像模型；普通对话模型不能直接用于生图。','rerank':'当前 OpenAI API 接入没有独立重排序端点。'},
-        'aliyun':{'image':'支持 OpenAI 兼容 Images API 的千问图像模型；旧版原生/异步生图模型不适用。','rerank':'网关转换为 DashScope 文本排序接口；基础地址填写 /api/v1，可使用业务空间专属域名。'},
+        'aliyun':{'image':'支持 OpenAI 兼容 Images API 的千问图像模型；按控制台填写对应地域及业务空间的 /compatible-mode/v1 地址。当前为同步非流式接口，返回图片 URL；旧版原生/异步生图模型不适用。','rerank':'网关转换为 DashScope 文本排序接口；基础地址填写 /api/v1，可使用业务空间专属域名。'},
         'siliconflow':{'image':'支持硅基流动生图接口，返回图片 URL；单次一张，暂不提供 b64_json 或批量调用。','rerank':'使用重排序专用模型，支持 /v1/rerank。'},
         'volcengine':{'image':'使用 Seedream 等支持 /images/generations 的模型及按量付费 Key。'},
         'gemini':{'image':'使用支持 OpenAI 兼容 Images API 的 Gemini 图像模型，建议 response_format=b64_json。'},

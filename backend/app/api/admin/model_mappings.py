@@ -41,7 +41,22 @@ async def canonical(db,name,model_type,provider_id=None,mapping_id=None):
     row=await db.get(LogicalModel,name)
     if row.model_type==model_type:return
     if not {row.model_type,model_type}<={'text','reasoning','multimodal'}:
-        raise APIError(409,'MODEL_TYPE_CONFLICT','同一逻辑模型的类型必须一致')
+        # Deleted accounts retain canonical names for historical logs. An unused
+        # name may be reintroduced with its actual capability, without rewriting
+        # historical mappings or weakening active configuration constraints.
+        from app.models.user import ModelGroupModel
+        from app.models.balance import BalancedNode
+        live=await db.scalar(select(ProviderModelMapping.id).join(Provider,Provider.id==ProviderModelMapping.provider_id).where(
+            ProviderModelMapping.logical_model==name,ProviderModelMapping.deleted_at.is_(None),Provider.deleted_at.is_(None)).limit(1))
+        grouped=await db.scalar(select(ModelGroupModel.model_group_id).where(ModelGroupModel.logical_model==name).limit(1))
+        node=await db.scalar(select(BalancedNode.id).join(ProviderModelMapping,ProviderModelMapping.id==BalancedNode.mapping_id).where(
+            ProviderModelMapping.logical_model==name).limit(1))
+        vector_rule=await db.scalar(select(RouteConfig.id).where(RouteConfig.embedding_model==name).limit(1))
+        from app.services.operations_settings import vector
+        if live is None and grouped is None and node is None and vector_rule is None and vector.get('model')!=name:
+            row.model_type=model_type
+            return
+        raise APIError(409,'MODEL_TYPE_CONFLICT','模型 '+name+' 的已有类型为 '+row.model_type+'，仍有映射或配置引用；请使用独立请求模型名称或先调整相关配置')
     # Change a Chat model's capability only when all retained mappings agree.
     query=select(ProviderModelMapping.id).join(Provider,Provider.id==ProviderModelMapping.provider_id).where(
         ProviderModelMapping.logical_model==name,ProviderModelMapping.deleted_at.is_(None),

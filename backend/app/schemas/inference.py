@@ -1,7 +1,7 @@
 """Bounded native protocol inputs; vendor extensions survive native forwarding."""
 import json
 from typing import Literal
-from pydantic import BaseModel,ConfigDict,Field,JsonValue,model_validator
+from pydantic import BaseModel,ConfigDict,Field,JsonValue,model_validator,field_validator
 
 class Input(BaseModel):
     model_config=ConfigDict(extra='allow',allow_inf_nan=False)
@@ -58,3 +58,8 @@ class ImagesInput(Input):
     prompt:str=Field(min_length=1)
     n:int=Field(default=1,strict=True,ge=1,le=10)
     stream:Literal[False]=False
+    @field_validator('prompt')
+    @classmethod
+    def nonblank_prompt(cls,value):
+        if not value.strip():raise ValueError('image prompt must not be blank')
+        return value

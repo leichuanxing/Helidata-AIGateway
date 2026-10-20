@@ -6,6 +6,7 @@ from sqlalchemy import select,update
 from app.core.database import session_factory
 from app.core.exceptions import APIError
 from app.core.security import now
+from app.core.config import get_settings
 from app.models.user import User,Provider,ProviderModelMapping
 from app.gateway.context import GatewayContext
 from app.gateway.request_id import generate
@@ -48,7 +49,8 @@ async def run_one(actor_id,account,mapping,request):
         ctx.attempts.append({'provider_id':account.id,'provider_name':account.name,'logical_model':mapping.logical_model,
             'upstream_model':mapping.upstream_model,'protocol':ctx.adapter.protocol_name,'config_version':account.config_version,
             'status':'not_sent','code':None,'http_status':None,'elapsed_ms':None})
-        async with asyncio.timeout(150):
+        config=get_settings().gateway
+        async with asyncio.timeout(config.nonstream_timeout+config.queue_timeout+30):
             async with lease(ctx):
                 async with session_factory() as db:
                     actor=await db.get(User,actor_id);fresh=await db.get(Provider,account.id);m=await db.get(ProviderModelMapping,mapping.id)
