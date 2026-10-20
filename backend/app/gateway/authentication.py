@@ -3,11 +3,13 @@ from app.core.exceptions import APIError
 from app.core.security import digest
 from app.models.user import ApiKey, User, UserGroup
 
+WEB_PLAYGROUND_OPERATIONS={'/api/admin/chat-test/completions':'chat','/api/admin/chat-test/images':'images'}
+
 
 async def authenticate(request, db):
     # Only this exact, authenticated admin endpoint accepts a web session.
     # Revalidate the session again during queued admission, never trust a client flag.
-    if request.scope['path'] == '/api/admin/chat-test/completions':
+    if request.scope['path'] in WEB_PLAYGROUND_OPERATIONS:
         from app.core.dependencies import current_user, active_user, administrator
         from app.services.group_access import resolve_group
         user = await current_user(request, db)

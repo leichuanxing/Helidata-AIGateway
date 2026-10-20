@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 from starlette.requests import Request
 from pydantic import ValidationError
-from app.api.admin.chat_test import ChatTestInput, models, completion
+from app.api.admin.chat_test import ChatTestInput, ImageTestInput, models, completion,images
 from app.core.exceptions import APIError
 from app.gateway import authentication
 from app.gateway.provider_scheduler import sticky_key
@@ -47,10 +47,30 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_catalog_filters_types_and_deduplicates(self):
         item=dict(logical_model='chat',model_type='text',configured=True,virtual=False)
-        groups=[dict(name='first',models=[item,dict(item,logical_model='vector',model_type='embedding')]),dict(name='second',models=[dict(item,configured=False),dict(item,logical_model='virtual',virtual=True)])]
+        groups=[dict(name='first',models=[item,dict(item,logical_model='vector',model_type='embedding'),dict(item,logical_model='image',model_type='image')]),dict(name='second',models=[dict(item,configured=False),dict(item,logical_model='virtual',virtual=True)])]
         with patch('app.api.admin.chat_test.catalog',AsyncMock(return_value=groups)):
             result=await models(NS(user_group_id=1),NS())
-        self.assertEqual(len(result['data']['models']),2);self.assertEqual(result['data']['models'][0]['groups'],['first','second']);self.assertTrue(result['data']['models'][0]['configured'])
+        self.assertEqual(len(result['data']['models']),3);self.assertEqual(result['data']['models'][0]['groups'],['first','second']);self.assertTrue(result['data']['models'][0]['configured'])
+
+    async def test_image_playground_uses_metered_images_pipeline_without_control_fields(self):
+        body=ImageTestInput(model='image',prompt='a mountain',consent=True)
+        with patch('app.api.admin.chat_test.pipeline.run',AsyncMock(return_value={'created':1,'data':[]})) as run:
+            await images(body,self.request('/api/admin/chat-test/images'),NS(),NS())
+        args=run.call_args.args;self.assertEqual(args[2:4],('images','image'))
+        self.assertEqual(args[4],{'model':'image','prompt':'a mountain','n':1})
+        for values in ({'consent':False},{'prompt':' '},{'n':5},{'temperature':.7},{'stream':True},{'size':'bad'}):
+            with self.assertRaises(ValidationError):ImageTestInput.model_validate({'model':'image','prompt':'test','consent':True,**values})
+
+    async def test_image_endpoint_session_roles_and_public_key_boundary(self):
+        path='/api/admin/chat-test/images';user=NS(id=1,role='admin',user_group_id=2,must_change_password=False)
+        with patch('app.core.dependencies.current_user',AsyncMock(return_value=user)),patch('app.services.group_access.resolve_group',AsyncMock(return_value=NS(id=2))):
+            key,actor,group=await authentication.authenticate(self.request(path),NS());self.assertIsNone(key);self.assertIs(actor,user)
+        with patch('app.core.dependencies.current_user',AsyncMock(return_value=NS(role='user',must_change_password=False))):
+            with self.assertRaises(APIError) as caught:await authentication.authenticate(self.request(path),NS())
+            self.assertEqual(caught.exception.status_code,403)
+        with patch('app.core.dependencies.current_user',AsyncMock()) as web:
+            with self.assertRaises(APIError):await authentication.authenticate(self.request('/v1/images/generations'),NS())
+            web.assert_not_awaited()
 
     async def test_completion_uses_full_pipeline(self):
         body=ChatTestInput(model='chat',messages=[dict(role='user',content='hello')])

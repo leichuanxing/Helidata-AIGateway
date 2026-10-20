@@ -4,28 +4,32 @@ import {ElMessage} from 'element-plus'
 import {api,message,sessionFetch} from '../api/client'
 import {useRouter} from 'vue-router'
 import {ACCEPT,MAX_ATTACHMENTS,MAX_ATTACHMENT_BYTES,formatBytes,readAttachment,boundedMessages} from '../utils/chatAttachments'
+import {imageTestPayload,generatedImages,type GeneratedImage} from '../utils/imagePlayground'
 import type {Attachment} from '../utils/chatAttachments'
 type Model={logical_model:string;model_type:string;configured:boolean;virtual:boolean;balanced?:boolean;groups:string[]}
-type Turn={prompt:string;attachments:Attachment[];answer:string;reasoning:string;status:'pending'|'done'|'error'|'cancelled';error:string;requestId:string;compliance:string;usage:any;elapsed:number;rounds:number;finish:string}
+type Turn={kind?:'chat'|'image';images?:GeneratedImage[];prompt:string;attachments:Attachment[];answer:string;reasoning:string;status:'pending'|'done'|'error'|'cancelled';error:string;requestId:string;compliance:string;usage:any;elapsed:number;rounds:number;finish:string}
 const router=useRouter(),models=ref<Model[]>([]),model=ref(''),loading=ref(false),loadError=ref('')
 const turns=ref<Turn[]>([]),prompt=ref(''),system=ref(''),temperature=ref(0.7),maxTokens=ref(5000),stream=ref(true),busy=ref(false)
 const attachments=ref<Attachment[]>([]),reading=ref(false),settingsOpen=ref(true),preview=ref<Attachment|null>(null)
 const fileInput=ref<HTMLInputElement>(),viewport=ref<HTMLElement>(),selected=computed(()=>models.value.find(m=>m.logical_model===model.value))
+const imageMode=computed(()=>selected.value?.model_type==='image')
+const imageCount=ref(1),imageSize=ref(''),imageConsent=ref(false),generatedPreview=ref<GeneratedImage|null>(null)
+function label(item:Model){return item.model_type==='image'?(item.balanced?'文生图 · 负载均衡路由':'文生图'):item.balanced?'负载均衡路由':item.virtual?'智能路由':item.model_type==='multimodal'?'多模态':item.model_type==='reasoning'?'推理':'文本'}
 const multimodal=computed(()=>selected.value?.model_type==='multimodal')
-const modelLabel=computed(()=>selected.value?.balanced?'负载均衡路由':selected.value?.virtual?'智能路由':multimodal.value?'多模态':selected.value?.model_type==='reasoning'?'推理':'文本')
+const modelLabel=computed(()=>selected.value?label(selected.value):'')
 const attachmentBytes=computed(()=>attachments.value.reduce((sum,a)=>sum+a.size,0))
 let controller:AbortController|null=null,disposed=false,sequence=0
-const canSend=computed(()=>!busy.value&&!reading.value&&(!!prompt.value.trim()||attachments.value.length>0)&&selected.value?.configured&&Number.isInteger(maxTokens.value)&&maxTokens.value>=1&&maxTokens.value<=65535)
+const canSend=computed(()=>!busy.value&&!reading.value&&selected.value?.configured&&(imageMode.value?!!prompt.value.trim()&&imageConsent.value&&Number.isInteger(imageCount.value)&&imageCount.value>=1&&imageCount.value<=4:(!!prompt.value.trim()||attachments.value.length>0)&&Number.isInteger(maxTokens.value)&&maxTokens.value>=1&&maxTokens.value<=65535))
 async function load(){
  loading.value=true;loadError.value=''
  try{models.value=(await api.get('/admin/chat-test/models')).data.data.models;if(!models.value.some(m=>m.logical_model===model.value))model.value=models.value.find(m=>m.configured)?.logical_model||''}
  catch(e){loadError.value=message(e)}finally{loading.value=false}
 }
-watch(model,()=>{turns.value=[];attachments.value=[];preview.value=null})
+watch(model,()=>{imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];preview.value=null})
 watch(multimodal,(value,previous)=>{if(previous&&!value){attachments.value=[];turns.value=[];preview.value=null}})
 async function scroll(force=false){const nearBottom=!viewport.value||viewport.value.scrollHeight-viewport.value.scrollTop-viewport.value.clientHeight<120;await nextTick();if(viewport.value&&(force||nearBottom))viewport.value.scrollTop=viewport.value.scrollHeight}
 function stop(){controller?.abort()}
-function clear(){if(!busy.value&&!reading.value){turns.value=[];attachments.value=[];prompt.value='';preview.value=null}}
+function clear(){if(!busy.value&&!reading.value){imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];prompt.value='';preview.value=null}}
 function keydown(event:KeyboardEvent){if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(canSend.value)void send()}}
 async function copy(text:string){try{await navigator.clipboard.writeText(text);ElMessage.success('已复制')}catch{ElMessage.warning('当前浏览器不支持复制，请选择文本手动复制')}}
 async function addFiles(files:File[]){
@@ -43,6 +47,7 @@ function paste(event:ClipboardEvent){const files=Array.from(event.clipboardData?
 function remove(id:string){attachments.value=attachments.value.filter(a=>a.id!==id)}
 async function send(){
  if(!canSend.value)return
+ if(imageMode.value){await sendImage();return}
  const text=prompt.value.trim()||'请分析所附图片或文件。',sent=attachments.value.slice()
  const history=turns.value.filter(t=>t.status==='done'&&t.answer)
  const parameters={model:model.value,temperature:temperature.value,max_tokens:maxTokens.value,stream:stream.value}
@@ -89,6 +94,21 @@ async function send(){
  }catch(error:any){turn.value.status=signal.aborted?'cancelled':'error';turn.value.error=signal.aborted?'已停止生成，当前回复可能不完整':error.response?message(error):error.message||'请求失败，请重试'}
  finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;if(!disposed)void scroll()}
 }
+async function sendImage(){
+ let payload:ReturnType<typeof imageTestPayload>
+ try{payload=imageTestPayload(model.value,prompt.value,imageCount.value,imageSize.value,imageConsent.value)}catch(e:any){ElMessage.warning(e.message);return}
+ const turn=ref<Turn>({kind:'image',images:[],prompt:payload.prompt,attachments:[],answer:'',reasoning:'',status:'pending',error:'',requestId:'',compliance:'',usage:null,elapsed:0,rounds:0,finish:''})
+ turns.value.push(turn.value);prompt.value='';imageConsent.value=false;busy.value=true
+ const started=performance.now();controller=new AbortController();const signal=controller.signal;void scroll(true)
+ try{
+  const response=await sessionFetch('/api/admin/chat-test/images',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal})
+  turn.value.requestId=response.headers.get('X-Request-ID')||'';turn.value.compliance=response.headers.get('X-Content-Compliance')||''
+  const value=await response.json().catch(()=>({}))
+  if(!response.ok||value.error)throw new Error(value.error?.message||'图片生成失败（HTTP '+response.status+'）')
+  turn.value.images=generatedImages(value);turn.value.usage=value.usage||null;turn.value.status='done'
+ }catch(error:any){turn.value.status=signal.aborted?'cancelled':'error';turn.value.error=signal.aborted?'已停止等待；上游可能已生成图片并产生费用，请查看调用日志，避免重复提交':error.message||'图片生成失败'}
+ finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;if(!disposed)void scroll()}
+}
 onMounted(()=>{if(window.matchMedia('(max-width:800px)').matches)settingsOpen.value=false;void load()})
 onBeforeUnmount(()=>{disposed=true;stop()})
 </script>
@@ -99,45 +119,47 @@ onBeforeUnmount(()=>{disposed=true;stop()})
  <div class="chat-grid" :class="{'settings-hidden':!settingsOpen}">
   <section class="panel chat-conversation" aria-label="测试对话">
    <header class="conversation-toolbar">
-    <div class="model-picker"><el-select v-model="model" filterable placeholder="选择模型开始对话" :disabled="busy||reading" class="full"><el-option v-for="item in models" :key="item.logical_model" :value="item.logical_model" :label="item.logical_model" :disabled="!item.configured"><span>{{item.logical_model}}</span><span class="model-hint">{{!item.configured?'不可用':item.balanced?'负载均衡路由':item.virtual?'智能路由':item.model_type==='multimodal'?'多模态':item.model_type==='reasoning'?'推理':'文本'}}</span></el-option></el-select><el-tag v-if="selected" size="small" effect="plain">{{modelLabel}}</el-tag></div>
+    <div class="model-picker"><el-select v-model="model" filterable placeholder="选择模型开始对话" :disabled="busy||reading" class="full"><el-option v-for="item in models" :key="item.logical_model" :value="item.logical_model" :label="item.logical_model" :disabled="!item.configured"><span>{{item.logical_model}}</span><span class="model-hint">{{!item.configured?'不可用':label(item)}}</span></el-option></el-select><el-tag v-if="selected" size="small" effect="plain">{{modelLabel}}</el-tag></div>
     <el-button :disabled="busy||reading||(!turns.length&&!attachments.length&&!prompt)" @click="clear">新对话</el-button>
    </header>
    <div ref="viewport" class="conversation-scroll" aria-live="polite" :aria-busy="busy">
-    <div v-if="!turns.length" class="chat-empty"><div class="empty-icon"><UiIcon name="chat"/></div><h3>{{models.length?'开始一段新的对话':'暂无可测试的对话模型'}}</h3><p>{{multimodal?'上传图片、PDF 或文本文件，测试模型的理解能力。':models.length?'选择已配置的模型，输入问题并查看实时回复。':'请先添加模型，并检查用户组授权。'}}</p><div class="capability-tags"><el-tag effect="plain">多轮对话</el-tag><el-tag effect="plain">流式回复</el-tag><el-tag v-if="multimodal" effect="plain">图片与文件</el-tag></div></div>
+    <div v-if="!turns.length" class="chat-empty"><div class="empty-icon"><UiIcon name="chat"/></div><h3>{{imageMode?'生成一张图片':models.length?'开始一段新的对话':'暂无可测试模型'}}</h3><p>{{imageMode?'输入画面描述并确认费用，使用所选模型生成图片。':multimodal?'上传图片、PDF 或文本文件，测试模型的理解能力。':models.length?'选择已配置的模型，输入问题并查看实时回复。':'请先添加模型，并检查用户组授权。'}}</p><div class="capability-tags"><template v-if="!imageMode"><el-tag effect="plain">多轮对话</el-tag><el-tag effect="plain">流式回复</el-tag></template><el-tag v-else effect="plain">文生图 · 单次生成</el-tag><el-tag v-if="multimodal" effect="plain">图片与文件</el-tag></div></div>
     <article v-for="(turn,index) in turns" :key="index" class="chat-turn">
      <div class="user-message"><div class="message-label">你</div><div class="message-text">{{turn.prompt}}</div>
       <div v-if="turn.attachments.length" class="sent-attachments"><button v-for="file in turn.attachments" :key="file.id" class="sent-file" @click="preview=file"><img v-if="file.kind==='image'" :src="file.data" :alt="file.name"/><span v-else class="file-kind">{{file.kind==='pdf'?'PDF':'TXT'}}</span><span class="file-name">{{file.name}}<small>{{formatBytes(file.size)}}</small></span></button></div>
      </div>
      <div class="assistant-message"><div class="assistant-avatar"><UiIcon name="chat"/></div><div class="assistant-body"><div class="message-label">模型回复 <span v-if="turn.status==='pending'" class="typing-dot"/></div>
       <details v-if="turn.reasoning" class="reasoning"><summary>思考过程</summary><div class="message-text">{{turn.reasoning}}</div></details>
-      <div class="message-text">{{turn.answer||(turn.status==='pending'?'等待模型回复…':turn.status==='done'?'模型未返回文本内容。':'')}}</div>
-      <el-alert v-if="turn.error" :title="turn.error" :type="turn.status==='cancelled'?'info':'error'" :closable="false"/>
+      <div class="message-text">{{turn.kind==='image'?(turn.status==='pending'?'正在生成图片，请稍候…':''):turn.answer||(turn.status==='pending'?'等待模型回复…':turn.status==='done'?'模型未返回文本内容。':'')}}</div>
+      <div v-if="turn.images?.length" class="generated-images"><figure v-for="(image,i) in turn.images" :key="i"><button @click="generatedPreview=image" :aria-label="'查看生成图片 '+(i+1)"><img :src="image.src" :alt="'生成图片 '+(i+1)" referrerpolicy="no-referrer" loading="lazy" @error="($event.target as HTMLImageElement).alt='图片加载失败，供应商链接可能已到期'"/></button><figcaption>图片 {{i+1}} · 点击查看大图</figcaption></figure></div><el-alert v-if="turn.error" :title="turn.error" :type="turn.status==='cancelled'?'info':'error'" :closable="false"/>
       <p v-if="turn.finish==='length'" class="limit-note">已达到输出 Token 上限，可调整参数后重试。</p>
-      <footer v-if="turn.status!=='pending'" class="message-footer"><span v-if="turn.compliance">{{({block:'内容合规：已阻断',audit:'内容合规：命中并放行',pass:'内容合规：审核通过',disabled:'内容合规：未启用',not_applicable:'内容合规：无适用策略',not_reached:'内容合规：未执行'} as Record<string,string>)[turn.compliance]}}</span><router-link v-if="turn.requestId&&['block','audit','pass'].includes(turn.compliance)" :to="{path:'/admin/compliance/logs',query:{request_id:turn.requestId}}">审核记录</router-link><span>{{(turn.elapsed/1000).toFixed(2)}} 秒</span><span v-if="turn.usage">输入 {{turn.usage.prompt_tokens??'—'}} · 输出 {{turn.usage.completion_tokens??'—'}} · 总 Token {{turn.usage.total_tokens??'未上报'}}</span><span>上下文 {{turn.rounds}} 轮</span><el-button v-if="turn.answer" link @click="copy(turn.answer)">复制</el-button><el-button v-if="turn.requestId" link type="primary" @click="router.push('/admin/call-logs/'+turn.requestId)">调用日志</el-button></footer>
+      <footer v-if="turn.status!=='pending'" class="message-footer"><span v-if="turn.compliance">{{({block:'内容合规：已阻断',audit:'内容合规：命中并放行',pass:'内容合规：审核通过',disabled:'内容合规：未启用',not_applicable:'内容合规：无适用策略',not_reached:'内容合规：未执行'} as Record<string,string>)[turn.compliance]}}</span><router-link v-if="turn.requestId&&['block','audit','pass'].includes(turn.compliance)" :to="{path:'/admin/compliance/logs',query:{request_id:turn.requestId}}">审核记录</router-link><span>{{(turn.elapsed/1000).toFixed(2)}} 秒</span><span v-if="turn.kind==='image'&&turn.images?.length">生成 {{turn.images.length}} 张 · 费用以上游为准</span><span v-if="turn.usage&&turn.kind!=='image'">输入 {{turn.usage.prompt_tokens??'—'}} · 输出 {{turn.usage.completion_tokens??'—'}} · 总 Token {{turn.usage.total_tokens??'未上报'}}</span><span v-if="turn.kind!=='image'">上下文 {{turn.rounds}} 轮</span><el-button v-if="turn.answer" link @click="copy(turn.answer)">复制</el-button><el-button v-if="turn.requestId" link type="primary" @click="router.push('/admin/call-logs/'+turn.requestId)">调用日志</el-button></footer>
      </div></div>
     </article>
    </div>
    <div class="chat-composer" @paste="paste">
     <div v-if="attachments.length" class="attachment-list"><div v-for="file in attachments" :key="file.id" class="attachment-card"><button class="attachment-preview" @click="preview=file"><img v-if="file.kind==='image'" :src="file.data" :alt="file.name"/><span v-else class="file-kind">{{file.kind==='pdf'?'PDF':'TXT'}}</span><span class="file-name">{{file.name}}<small>{{formatBytes(file.size)}}</small></span></button><el-button link :aria-label="'移除 '+file.name" :disabled="busy" @click="remove(file.id)">×</el-button></div></div>
-    <el-input v-model="prompt" type="textarea" :rows="3" resize="none" maxlength="16000" show-word-limit :placeholder="multimodal?'输入问题，或上传图片、文件后发送…':'输入问题，Enter 发送，Shift+Enter 换行'" @keydown="keydown"/>
-    <div class="composer-actions"><div class="composer-tools"><input ref="fileInput" class="file-input" type="file" multiple :accept="ACCEPT" aria-label="选择图片或文件" @change="chooseFiles"/><el-button v-if="multimodal" :loading="reading" :disabled="busy||attachments.length>=4" @click="fileInput?.click()">＋ 图片 / 文件</el-button><span class="muted">{{multimodal?attachments.length+' / 4 · '+formatBytes(attachmentBytes)+' / 3 MB':'Enter 发送 · Shift+Enter 换行'}}</span></div><el-button v-if="busy" type="danger" plain @click="stop">停止生成</el-button><el-button v-else type="primary" :disabled="!canSend" @click="send">发送</el-button></div>
-    <p class="composer-note">{{multimodal?'支持 PNG、JPEG、GIF、WebP、PDF 及 UTF-8 文本文件（附件总大小 ≤ 3 MB）。':'仅多模态模型支持附件。'}} 附件随发送提交给所选供应商。</p>
+    <el-input v-model="prompt" type="textarea" :rows="3" resize="none" maxlength="16000" show-word-limit :placeholder="imageMode?'描述你希望生成的画面，Enter 生成…':multimodal?'输入问题，或上传图片、文件后发送…':'输入问题，Enter 发送，Shift+Enter 换行'" @keydown="keydown"/>
+    <div v-if="imageMode" class="image-confirm"><el-checkbox v-model="imageConsent" :disabled="busy">我确认本次文生图调用可能产生费用</el-checkbox></div><div class="composer-actions"><div class="composer-tools"><input ref="fileInput" class="file-input" type="file" multiple :accept="ACCEPT" aria-label="选择图片或文件" @change="chooseFiles"/><el-button v-if="multimodal" :loading="reading" :disabled="busy||attachments.length>=4" @click="fileInput?.click()">＋ 图片 / 文件</el-button><span class="muted">{{multimodal?attachments.length+' / 4 · '+formatBytes(attachmentBytes)+' / 3 MB':'Enter 发送 · Shift+Enter 换行'}}</span></div><el-button v-if="busy" type="danger" plain @click="stop">停止生成</el-button><el-button v-else type="primary" :disabled="!canSend" @click="send">{{imageMode?'生成图片':'发送'}}</el-button></div>
+    <p class="composer-note">{{imageMode?'文生图只发送当前描述，不携带聊天历史或附件；停止等待后，上游仍可能计费。':multimodal?'支持 PNG、JPEG、GIF、WebP、PDF 及 UTF-8 文本文件（附件总大小 ≤ 3 MB）。':'仅多模态模型支持附件。'}} <template v-if="!imageMode">附件随发送提交给所选供应商。</template></p>
    </div>
   </section>
   <aside v-if="settingsOpen" class="panel chat-settings">
-   <div class="settings-title"><h2>对话参数</h2><el-tag size="small" type="info">当前会话</el-tag></div>
+   <div class="settings-title"><h2>{{imageMode?'图片参数':'对话参数'}}</h2><el-tag size="small" type="info">当前会话</el-tag></div>
    <p v-if="selected?.groups.length" class="muted model-groups">{{selected.groups.join(' · ')}}</p>
-   <el-form label-position="left" label-width="96px" class="parameter-form">
+   <el-form v-if="!imageMode" label-position="left" label-width="96px" class="parameter-form">
     <el-form-item label="系统提示词" class="system-parameter"><el-input v-model="system" type="textarea" :rows="3" resize="vertical" maxlength="16000" placeholder="可选：指定角色与回答方式" :disabled="busy"/></el-form-item>
     <el-form-item label="温度"><el-input-number v-model="temperature" :min="0" :max="2" :step="0.1" :precision="1" controls-position="right" :disabled="busy" class="full"/></el-form-item>
     <el-form-item label="输出上限" class="output-parameter"><el-input-number v-model="maxTokens" :min="1" :max="65535" :step="128" controls-position="right" :disabled="busy" class="full"/><span class="parameter-hint">Token · 1–65,535</span></el-form-item>
     <el-form-item label="流式回复"><el-switch v-model="stream" :disabled="busy"/><span class="switch-hint">实时显示</span></el-form-item>
    </el-form>
-   <details class="session-note"><summary>会话说明</summary><p>最多携带最近 20 轮成功回复；请求较大时自动减少较早的上下文。对话及附件仅保留在当前页面，离开后清空。</p><p>使用当前账号的模型权限、配额与内容合规配置。附件支持取决于上游模型；内容合规仅检查文字，不审核图片和 PDF 的内容。</p></details>
+   <el-form v-else label-position="top" class="parameter-form"><el-form-item label="图片数量"><el-input-number v-model="imageCount" :min="1" :max="4" :precision="0" :disabled="busy"/></el-form-item><el-form-item label="图片尺寸"><el-select v-model="imageSize" placeholder="使用上游默认尺寸" :disabled="busy"><el-option label="使用上游默认尺寸" value=""/><el-option v-for="size in ['1024x1024','1024x1536','1536x1024']" :key="size" :label="size" :value="size"/></el-select></el-form-item><p class="parameter-hint">数量与尺寸须符合上游模型能力；部分供应商仅支持单张图片。图片链接可能到期，请及时保存。</p></el-form>
+   <details class="session-note"><summary>会话说明</summary><p v-if="imageMode">通过当前账号授权、配额、内容合规及负载均衡管线生成图片。图片不支持流式回复，不发送系统提示词、温度和输出 Token；等待时间遵循性能设置。图片计量不等同于 Token。</p><p v-else>最多携带最近 20 轮成功回复；请求较大时自动减少较早的上下文。对话及附件仅保留在当前页面，离开后清空。</p><p>使用当前账号的模型权限、配额与内容合规配置。附件支持取决于上游模型；内容合规仅检查文字，不审核图片和 PDF 的内容。</p></details>
    <el-alert title="测试会产生实际用量及可能的费用。" type="warning" :closable="false" show-icon/>
    <router-link to="/admin/providers" class="provider-link">管理模型供应商 →</router-link>
   </aside>
  </div>
+ <el-dialog :model-value="!!generatedPreview" title="生成图片" width="min(900px,92vw)" append-to-body @close="generatedPreview=null"><img v-if="generatedPreview" :src="generatedPreview.src" alt="生成图片预览" referrerpolicy="no-referrer" class="large-preview"/></el-dialog>
  <el-dialog :model-value="!!preview" :title="preview?.name||'附件预览'" width="min(720px,92vw)" append-to-body @close="preview=null"><template v-if="preview"><img v-if="preview.kind==='image'" :src="preview.data" :alt="preview.name" class="large-preview"/><pre v-else-if="preview.kind==='text'" class="text-preview">{{preview.data}}</pre><div v-else class="pdf-preview"><span class="file-kind">PDF</span><p>{{preview.name}}</p><p class="muted">{{formatBytes(preview.size)}} · 原始 PDF 随对话发送，由所选模型读取。</p></div></template></el-dialog>
 </div>
 </template>
@@ -157,3 +179,7 @@ onBeforeUnmount(()=>{disposed=true;stop()})
 
 .parameter-form :deep(.el-form-item){margin-bottom:10px}.parameter-form :deep(.el-form-item__label){margin-bottom:4px}.settings-title{min-height:32px;margin-bottom:10px;padding-bottom:10px}.model-groups{margin-bottom:10px}.chat-settings .session-note{padding-top:8px;margin-bottom:8px}.chat-settings>.el-alert{margin-bottom:8px}.chat-settings .provider-link{padding-top:8px}.parameter-form :deep(.el-textarea__inner){min-height:64px!important}.chat-settings{scrollbar-width:thin}
 </style>
+
+<style scoped>.generated-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;max-width:760px}.generated-images figure{margin:0;min-width:0}.generated-images button{padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft);cursor:zoom-in;width:100%}.generated-images img{display:block;width:100%;max-height:420px;object-fit:contain;min-height:100px}.generated-images figcaption{color:var(--muted);font-size:11px;margin-top:6px}.parameter-form :deep(.el-checkbox){height:auto;white-space:normal;align-items:start;margin-top:12px}.parameter-form :deep(.el-checkbox__label){white-space:normal;line-height:1.7}</style>
+
+<style scoped>.image-confirm{font-size:12px;margin-top:10px}.image-confirm :deep(.el-checkbox){height:auto;white-space:normal}.image-confirm :deep(.el-checkbox__label){white-space:normal;line-height:1.6}</style>

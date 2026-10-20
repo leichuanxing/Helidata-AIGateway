@@ -139,7 +139,7 @@ async def models(user=Depends(administrator), db=Depends(get_session)):
     result = {}
     for group in groups:
         for model in group['models']:
-            if model['model_type'] not in ('text', 'reasoning', 'multimodal'):
+            if model['model_type'] not in ('text', 'reasoning', 'multimodal', 'image'):
                 continue
             name = model['logical_model']
             if name not in result:
@@ -162,3 +162,18 @@ async def completion(body: ChatTestInput, request: Request, user=Depends(adminis
         payload['stream_options'] = {'include_usage': True}
     validated = PlaygroundChatInput.model_validate(payload)
     return await pipeline.run(request, db, 'chat', body.model, validated.model_dump(exclude_unset=True))
+
+from app.schemas.inference import ImagesInput
+
+class ImageTestInput(ImagesInput):
+    model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
+    prompt:str=Field(min_length=1,max_length=16000)
+    n:int=Field(default=1,strict=True,ge=1,le=4)
+    size:str|None=Field(default=None,max_length=32,pattern=r'^(auto|[1-9][0-9]{1,4}x[1-9][0-9]{1,4})$')
+    consent:Literal[True]
+
+@router.post('/images')
+async def images(body:ImageTestInput,request:Request,user=Depends(administrator),db=Depends(get_session)):
+    # Use normal authorization, compliance, concurrency, routing and accounting.
+    # Consent is a playground control and must never be forwarded to the vendor.
+    return await pipeline.run(request,db,'images',body.model,body.model_dump(exclude={'consent','stream'},exclude_none=True))

@@ -87,6 +87,15 @@ class ImagesHTTPTests(unittest.IsolatedAsyncioTestCase):
         tested=await self.api('POST',path+'/test-models',{**consent,'image_consent':True})
         self.assertEqual(tested['success_count'],1)
         self.assertIsNone(tested['results'][0]['total_tokens'],'image counts must not become tokens')
+        playable=await self.api('GET','admin/chat-test/models')
+        self.assertEqual(next(m for m in playable['models'] if m['logical_model']==name)['model_type'],'image')
+        before=len(self.calls)
+        await self.api('POST','admin/chat-test/images',{'model':name,'prompt':'test','consent':False},422)
+        self.assertEqual(len(self.calls),before)
+        generated=await self.admin.post('/api/admin/chat-test/images',json={'model':name,'prompt':'a mountain','consent':True})
+        self.assertEqual(generated.status_code,200,generated.text[:200])
+        self.assertTrue(generated.headers.get('X-Content-Compliance'))
+        self.assertNotIn('consent',self.calls[-1][2]);self.assertNotIn('stream',self.calls[-1][2])
         key=await self.api('POST','portal/api-keys',{'name':name},201);secret=key['secret']
         await self.api('POST','admin/model-groups',{'name':name,'protocol_type':'image','logical_models':[name]},201)
         async with httpx.AsyncClient(base_url='http://127.0.0.1',headers={'Authorization':'Bearer '+secret},timeout=30) as client:
@@ -108,6 +117,8 @@ class ImagesHTTPTests(unittest.IsolatedAsyncioTestCase):
             policy=await self.api('POST','admin/compliance/policies',{'name':name,'status':'enabled','action':'block','models':[name]})
             await self.api('POST','admin/compliance/words',{'pattern':'forbidden-image-prompt','policy_id':policy['id']})
             self.assertEqual((await image(prompt='forbidden-image-prompt')).status_code,403);self.assertEqual(len(self.calls),before)
+            denied=await self.admin.post('/api/admin/chat-test/images',json={'model':name,'prompt':'forbidden-image-prompt','consent':True})
+            self.assertEqual(denied.status_code,403);self.assertEqual(denied.headers.get('X-Content-Compliance'),'block');self.assertEqual(len(self.calls),before)
             # Image routes reuse the same physical mapping and protocol.
             mapping=(await self.api('GET',path+'/model-mappings'))[0]
             route=await self.api('POST','admin/balance-routes',{'name':name,'model_name':name+'-balanced','model_type':'image','nodes':[{'mapping_id':mapping['id']}],'health_interval':3600},201)

@@ -90,14 +90,15 @@ async def request_context(request: Request,call_next):
             # Consume unexpected application errors here so Uvicorn never logs raw exceptions.
             response=await unexpected(request,error)
         response.headers['X-Request-ID']=request.state.request_id
-        if request.scope['path']=='/api/admin/chat-test/completions':
+        from app.gateway.authentication import WEB_PLAYGROUND_OPERATIONS
+        if request.scope['path'] in WEB_PLAYGROUND_OPERATIONS:
             ctx=getattr(request.state,'gateway_context',None)
             result=ctx.deferred.get('compliance','not_reached') if ctx else 'not_reached'
             status=result.get('action','not_reached') if isinstance(result,dict) else result
             if status in ('block','audit','pass','disabled','not_applicable','not_reached'):
                 response.headers['X-Content-Compliance']=status
 
-        fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.scope['path'],request.method))
+        fallback_operation={('/v1/chat/completions','POST'):'chat',('/api/admin/chat-test/completions','POST'):'chat',('/api/admin/chat-test/images','POST'):'images',('/v1/responses','POST'):'responses',('/v1/messages','POST'):'messages',('/v1/embeddings','POST'):'embeddings',('/v1/rerank','POST'):'rerank',('/v1/images/generations','POST'):'images',('/api/gateway/preflight','POST'):'preflight',('/v1/models','GET'):'models'}.get((request.scope['path'],request.method))
         if fallback_operation and not hasattr(request.state,'gateway_context'):
             # Schema/body failures occur before Pipeline creation. Persist only safe metadata.
             ctx=GatewayContext(request.state.request_id,fallback_operation,getattr(request.state,'safe_model',None))
