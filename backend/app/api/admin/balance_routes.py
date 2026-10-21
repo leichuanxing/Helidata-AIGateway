@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Literal
 from fastapi import APIRouter,Depends,Query,Request
 from sqlalchemy import select,delete,func,text
 from sqlalchemy.exc import IntegrityError
@@ -32,9 +33,12 @@ async def options(actor=Depends(administrator),db=Depends(get_session)):
         'usable':m.status=='enabled' and p.status=='enabled' and operation_for(m.model_type,p) is not None} for m,p in rows]}
 
 @router.get('')
-async def listing(q:str=Query('',max_length=100),page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),actor=Depends(administrator),db=Depends(get_session)):
+async def listing(q:str=Query('',max_length=100),page:int=Query(1,ge=1,le=10000),page_size:int=Query(20,ge=1,le=100),status:Literal['','enabled','disabled']='',model_type:Literal['','text','reasoning','multimodal','embedding','rerank','image']='',strategy:Literal['','round_robin','weighted_round_robin','least_concurrency','random','priority']='',actor=Depends(administrator),db=Depends(get_session)):
     query=select(BalancedRoute,LogicalModel.model_type).join(LogicalModel,LogicalModel.name==BalancedRoute.model_name)
     if q:query=query.where(BalancedRoute.name.icontains(q,autoescape=True)|BalancedRoute.model_name.icontains(q,autoescape=True))
+    if status:query=query.where(BalancedRoute.status==status)
+    if model_type:query=query.where(LogicalModel.model_type==model_type)
+    if strategy:query=query.where(BalancedRoute.strategy==strategy)
     total=await db.scalar(select(func.count()).select_from(query.subquery()))
     rows=(await db.execute(query.order_by(BalancedRoute.id).offset((page-1)*page_size).limit(page_size))).all()
     counts=dict((await db.execute(select(BalancedNode.route_id,func.count()).group_by(BalancedNode.route_id))).all())
@@ -57,6 +61,8 @@ async def detail_data(db,row,hours=24):
     metrics=(await db.execute(text("""
         SELECT a->>'balance_node_id' AS node_id,count(*) AS requests,
           count(*) FILTER (WHERE a->>'status'='success') AS successes,
+          count(*) FILTER (WHERE a->>'status'='failure') AS failures,
+          count(*) FILTER (WHERE a->>'status'='client_cancelled') AS cancellations,
           avg(CASE WHEN jsonb_typeof(a->'elapsed_ms')='number' THEN (a->>'elapsed_ms')::double precision END) AS latency
         FROM call_logs l CROSS JOIN LATERAL jsonb_array_elements(
           CASE WHEN jsonb_typeof(trace->'attempts')='array' THEN trace->'attempts' ELSE '[]'::jsonb END) a
@@ -74,6 +80,8 @@ async def detail_data(db,row,hours=24):
         nodes.append({**public(n),'provider_id':p.id,'provider_name':p.name,'logical_model':m.logical_model,'upstream_model':m.upstream_model,
             'model_type':m.model_type,'state':state,'provider_health':p.health_status,'provider_max_concurrency':p.max_concurrency,
             'current_concurrency':loads[1+i*2],'provider_concurrency':loads[2+i*2],'requests':requests,
+            'successes':metric.get('successes',0),'failures':metric.get('failures',0),'cancellations':metric.get('cancellations',0),
+            'effective_max_concurrency':min(1 if n.cooldown_until else n.max_concurrency,p.max_concurrency,row.max_concurrency),
             'success_rate':round(metric.get('successes',0)/requests*100,2) if requests else None,
             'average_latency_ms':round(metric['latency'],2) if metric.get('latency') is not None else None})
     return {**public(row),'model_type':model.model_type,'nodes':nodes,'current_concurrency':loads[0],'hours':hours}

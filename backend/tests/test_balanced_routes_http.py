@@ -10,6 +10,7 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_crud_protocols_nodes_failover_authorization_and_monitoring(self):
         ident=os.environ.get('AUDIT_CONTAINER_ID','');self.assertGreaterEqual(len(ident),12);self.assertEqual(os.environ.get('HOSTNAME','')[:12],ident[:12])
         gets=[];calls=[];modes={};active={};peaks={};seen_content={};seen_payload={};lock=threading.Lock()
+        probe_started=threading.Event();probe_release=threading.Event()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
             def answer(self,status,body):
@@ -18,9 +19,11 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                 except (BrokenPipeError,ConnectionResetError):pass
             def do_GET(self):
                 gets.append(self.path)
+                if self.path.startswith('/race/'):
+                    probe_started.set();probe_release.wait(5)
                 if self.path.startswith('/bad/'):return self.answer(401,{'error':{'message':'fixture wrong endpoint'}})
                 if self.path.startswith('/transient/'):return self.answer(503,{'error':{'message':'temporary unavailable'}})
-                self.answer(200,{'data':[{'id':'a'},{'id':'b'},{'id':'split'}]})
+                self.answer(200,{'data':[{'id':'a'},{'id':'b'},{'id':'split'},{'id':'race'},{'id':'renamed-a'}]})
             def do_POST(self):
                 body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));node=body['model'];mode=modes.get(node,'ok')
                 with lock:calls.append((node,self.path,bool(body.get('stream'))));seen_content[node]=body.get('messages');seen_payload[node]=body
@@ -55,7 +58,8 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     frame('message_stop',{'type':'message_stop'})
                 else:
                     frame('',{'id':'chunk','object':'chat.completion.chunk','created':1,'model':node,'choices':[{'index':0,'delta':{'content':node},'finish_reason':None}]})
-                    if mode!='broken':frame('','[DONE]')
+                    if mode=='idle':time.sleep(2)
+                    elif mode!='broken':frame('','[DONE]')
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
         try:
             async with httpx.AsyncClient(base_url='http://127.0.0.1',timeout=30) as admin:
@@ -79,6 +83,10 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                 body={'name':prefix,'model_name':prefix+'-unified','model_type':'text','strategy':'round_robin','health_interval':3600,'cooldown_seconds':1,'failure_threshold':1,
                     'max_retries':1,'timeout_seconds':5,'nodes':[{'mapping_id':m,'max_concurrency':1} for m in mapping_ids]}
                 created=await api('POST','admin/balance-routes',body,201);route_path='admin/balance-routes/'+str(created['id'])
+                filtered=await api('GET','admin/balance-routes?q='+prefix+'&status=enabled&model_type=text&strategy=round_robin')
+                self.assertIn(created['id'],[r['id'] for r in filtered['items']])
+                self.assertEqual((await api('GET','admin/balance-routes?q='+prefix+'&status=disabled'))['total'],0)
+                await api('GET','admin/balance-routes?strategy=invalid',status=422)
                 async def save():
                     current=await api('GET',route_path);body['expected_config_version']=current['config_version'];await api('PUT',route_path,body)
                 secret=(await api('POST','portal/api-keys',{'name':prefix},201))['secret']
@@ -108,13 +116,61 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     modes['a']='ok';await api('POST',route_path+f"/nodes/{node_a['id']}/check",{})
                     body.update(retry_uncertain=False,timeout_seconds=5);await save();modes['a']='broken';start=len(calls);r=await chat(True);self.assertEqual(r.status_code,200);await log(r.headers['x-request-id']);self.assertEqual(len(calls)-start,1)
                     modes['a']='ok';await api('POST',route_path+f"/nodes/{node_a['id']}/check",{})
+                    modes['a']='idle';start=len(calls)
+                    async with client.stream('POST','/v1/chat/completions',json={'model':body['model_name'],'messages':[{'role':'user','content':'cancel stream'}],'max_tokens':8,'stream':True}) as interrupted:
+                        self.assertEqual(interrupted.status_code,200)
+                        cancelled_id=interrupted.headers['x-request-id']
+                        async for line in interrupted.aiter_lines():
+                            if 'choices' in line:break
+                    cancelled=await log(cancelled_id)
+                    self.assertEqual(cancelled['status'],'client_cancelled')
+                    self.assertEqual(len(calls)-start,1,'disconnect must not fail over')
+                    released=await api('GET',route_path)
+                    self.assertEqual(released['current_concurrency'],0)
+                    self.assertTrue(all(n['current_concurrency']==0 for n in released['nodes']))
+                    modes['a']='ok'
                     body['strategy']='least_concurrency';body['max_concurrency']=2;await save();modes.update(a='slow',b='slow')
                     parallel=await asyncio.gather(*(chat() for _ in range(8)));self.assertTrue(all(r.status_code==200 for r in parallel));self.assertLessEqual(max(peaks.values()),1)
                     detail=await api('GET',route_path);self.assertEqual(detail['current_concurrency'],0);self.assertTrue(all(n['current_concurrency']==0 and n['requests']>0 for n in detail['nodes']))
+                    for n in detail['nodes']:
+                        self.assertEqual(n['requests'],n['successes']+n['failures']+n['cancellations'])
+                        self.assertEqual(n['effective_max_concurrency'],1)
                     body['nodes'][0]['status']='disabled';await save();start=len(calls);self.assertEqual((await chat()).status_code,200);self.assertEqual(calls[start][0],'b')
                     self.assertEqual((await api('GET',f"admin/providers/{providers[0]['id']}"))['status'],'enabled')
+                    # A scheduled probe is held while a real inference opens the circuit.
+                    race_provider=await api('POST','admin/providers',{'name':prefix+'-race','provider_type':'custom_openai','protocol':'openai',
+                        'base_url':f'http://127.0.0.1:{server.server_port}/race/v1','model_mappings':[{'logical_model':prefix+'-race','upstream_model':'race','model_type':'text'}]},201)
+                    race_mapping=(await api('GET',f"admin/providers/{race_provider['id']}/model-mappings"))[0]['id']
+                    race=await api('POST','admin/balance-routes',{'name':prefix+'-race','model_name':prefix+'-race-route','nodes':[{'mapping_id':race_mapping}],
+                        'health_interval':10,'failure_threshold':1,'cooldown_seconds':20,'max_retries':0},201)
+                    race_path='admin/balance-routes/'+str(race['id']);race_node=(await api('GET',race_path))['nodes'][0]['id']
+                    self.assertTrue(await asyncio.to_thread(probe_started.wait,16),'background probe did not start')
+                    modes['race']='error'
+                    rejected=await client.post('/v1/chat/completions',json={'model':race['model_name'],'messages':[{'role':'user','content':'hello'}],'max_tokens':1})
+                    self.assertEqual(rejected.status_code,502)
+                    probe_release.set()
+                    from redis.asyncio import Redis
+                    from app.core.config import get_settings
+                    redis=Redis(host='127.0.0.1',port=get_settings().redis.port)
+                    try:
+                        for _ in range(40):
+                            if not await redis.exists(f'balance:probe:{race_node}'):break
+                            await asyncio.sleep(.05)
+                        else:self.fail('probe lock was not released')
+                    finally:await redis.aclose()
+                    retained=(await api('GET',race_path))['nodes'][0]
+                    self.assertEqual(retained['health_status'],'unhealthy');self.assertEqual(retained['state'],'cooling')
+                    await api('DELETE',race_path)
                     body['nodes'][0]['status']='enabled';body['strategy']='random';await save();self.assertEqual((await chat()).status_code,200)
-                    body.update(strategy='priority',health_interval=10);await save();modes['a']='error'
+                    body.update(strategy='priority',health_interval=10,cooldown_seconds=20);await save();modes['a']='error'
+                    self.assertEqual((await chat()).status_code,502);modes['a']='ok'
+                    await asyncio.sleep(10.5)
+                    cooling=(await api('GET',route_path))['nodes'][0]
+                    self.assertEqual(cooling['health_status'],'unhealthy')
+                    self.assertEqual(cooling['state'],'cooling')
+                    # An explicit manual check can recover earlier; automatic checks cannot.
+                    self.assertTrue((await api('POST',route_path+f"/nodes/{node_a['id']}/check",{}))['success'])
+                    body['cooldown_seconds']=1;await save();modes['a']='error'
                     self.assertEqual((await chat()).status_code,502);modes['a']='ok'
                     for _ in range(30):
                         recovered=(await api('GET',route_path))['nodes'][0]
@@ -274,4 +330,4 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     await api('DELETE',route_path);self.assertNotIn(body['model_name'],[m['id'] for m in (await client.get('/v1/models')).json()['data']])
                     self.assertEqual((await api('GET',f"admin/providers/{providers[0]['id']}"))['status'],'enabled')
                     print('PASS independent route real HTTP: CRUD, 5 strategies, 3 native protocols JSON/SSE, timeout/rate failover, cooldown recovery, probe, node isolation, concurrency, target compliance, version guard, catalog and delete guard')
-        finally:server.shutdown();server.server_close()
+        finally:probe_release.set();server.shutdown();server.server_close()

@@ -46,19 +46,19 @@ async def finish(ctx,outcome,code=None):
                     row.health_status='unhealthy';row.cooldown_until=now()+timedelta(seconds=route.cooldown_seconds)
     except Exception as error:logger.warning('Balanced health persistence pending [%s]',type(error).__name__)
 
-async def probe(route_id,node_id):
+async def probe(route_id,node_id,*,automatic=False):
     token=uuid4().hex;key=f'balance:probe:{node_id}'
     try:
         if not await redis_client.set(key,token,ex=20,nx=True):return {'success':False,'code':'CHECK_BUSY'}
     except RedisError:return {'success':False,'code':'SCHEDULER_UNAVAILABLE'}
-    try:return await _probe(route_id,node_id)
+    try:return await _probe(route_id,node_id,automatic=automatic)
     finally:
         import anyio
         with anyio.CancelScope(shield=True):
             try:await redis_client.eval("if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0",1,key,token)
             except RedisError:pass
 
-async def _probe(route_id,node_id):
+async def _probe(route_id,node_id,*,automatic=False):
     async with session_factory() as db:
         result=(await db.execute(select(BalancedRoute,BalancedNode,ProviderModelMapping,Provider).join(BalancedNode,BalancedNode.route_id==BalancedRoute.id)
             .join(ProviderModelMapping,ProviderModelMapping.id==BalancedNode.mapping_id).join(Provider,Provider.id==ProviderModelMapping.provider_id)
@@ -67,6 +67,8 @@ async def _probe(route_id,node_id):
         route,node,mapping,provider=result
         if route.status!='enabled' or node.status!='enabled' or mapping.status!='enabled' or mapping.deleted_at or provider.status!='enabled' or provider.deleted_at:
             return {'success':False,'code':'NODE_DISABLED'}
+        if automatic and any(until and until>now() for until in (node.cooldown_until,provider.cooldown_until)):
+            return {'success':False,'code':'CHECK_COOLING'}
         alias=await db.get(LogicalModel,route.model_name)
         operation=operation_for(alias.model_type,provider) if alias else None
         if not alias or not matching_type(alias.model_type,mapping.model_type) or not operation:
@@ -85,9 +87,12 @@ async def _probe(route_id,node_id):
     latency=round((monotonic()-started)*1000)
     async with session_factory.begin() as db:
         current=await db.scalar(select(BalancedRoute).where(BalancedRoute.id==route_id,BalancedRoute.config_version==route.config_version).with_for_update())
-        live=await db.scalar(select(Provider.id).where(Provider.id==provider.id,Provider.config_version==provider.config_version,Provider.deleted_at.is_(None),Provider.status=='enabled').with_for_update())
+        live=await db.scalar(select(Provider).where(Provider.id==provider.id,Provider.config_version==provider.config_version,Provider.deleted_at.is_(None),Provider.status=='enabled').with_for_update())
         row=await db.scalar(select(BalancedNode).where(BalancedNode.id==node_id).with_for_update())
         if not current or not live or not row:return {'success':False,'code':'CONFIG_CHANGED'}
+        # A real inference may have opened the circuit while the GET was in flight.
+        if automatic and any(until and until>now() for until in (row.cooldown_until,live.cooldown_until)):
+            return {'success':False,'code':'CHECK_COOLING'}
         row.last_checked_at=now();row.next_check_at=now()+timedelta(seconds=route.health_interval)
         row.last_latency_ms=latency;row.last_error_code=code
         if success:
@@ -104,14 +109,22 @@ async def loop():
     while True:
         try:
             async with session_factory.begin() as db:
-                rows=(await db.execute(select(BalancedNode,BalancedRoute.health_interval).join(BalancedRoute).where(
+                rows=(await db.execute(select(BalancedNode,BalancedRoute.health_interval).join(BalancedRoute)
+                    .join(ProviderModelMapping,ProviderModelMapping.id==BalancedNode.mapping_id)
+                    .join(Provider,Provider.id==ProviderModelMapping.provider_id).where(
                     BalancedNode.status=='enabled',BalancedRoute.status=='enabled',
+                    ProviderModelMapping.status=='enabled',ProviderModelMapping.deleted_at.is_(None),
+                    Provider.status=='enabled',Provider.deleted_at.is_(None),
+                    or_(Provider.cooldown_until.is_(None),Provider.cooldown_until<=now()),
+                    # Automatic model-list success must not shorten a circuit's cooldown.
+                    # A manual check remains an explicit administrator recovery action.
+                    or_(BalancedNode.cooldown_until.is_(None),BalancedNode.cooldown_until<=now()),
                     or_(BalancedNode.next_check_at.is_(None),BalancedNode.next_check_at<=now()))
                     .order_by(BalancedNode.next_check_at.asc().nullsfirst(),BalancedNode.id).limit(20).with_for_update(of=BalancedNode,skip_locked=True))).all()
                 jobs=[(node.route_id,node.id) for node,interval in rows]
                 for node,interval in rows:node.next_check_at=now()+timedelta(seconds=interval)
             async def check(route_id,node_id):
-                async with semaphore:await probe(route_id,node_id)
+                async with semaphore:await probe(route_id,node_id,automatic=True)
             await asyncio.gather(*(check(*job) for job in jobs))
         except Exception as error:logger.warning('Balanced health check pending [%s]',type(error).__name__)
         await asyncio.sleep(1)
