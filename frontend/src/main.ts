@@ -21,7 +21,6 @@ const ModelGroups=()=>import('./views/ModelGroups.vue')
 const SmartRoute=()=>import('./views/SmartRoute.vue')
 const Compliance=()=>import('./views/Compliance.vue')
 import {settingsPage as Settings} from './ui/settingsPage'
-const SystemOperations=()=>import('./views/SystemOperations.vue')
 const Providers=()=>import('./views/Providers.vue')
 const ProviderDetail=()=>import('./views/ProviderDetail.vue')
 const Keys=()=>import('./views/Keys.vue')
@@ -42,9 +41,9 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/admin/dashboard',component:Dashboard,meta:{admin:true}},
   {path:'/admin/chat-test',component:ChatTest,meta:{admin:true}},
   {path:'/admin/gateway-security',component:()=>import('./views/GatewaySecurity.vue'),meta:{superAdmin:true}},
-  {path:'/admin/settings',component:Settings,meta:{superAdmin:true}},
-  {path:'/admin/backups',component:SystemOperations,meta:{superAdmin:true}},
-  {path:'/admin/audit-logs',component:SystemOperations,meta:{admin:true}},
+  {path:'/admin/settings',component:Settings,meta:{admin:true}},
+  {path:'/admin/backups',redirect:{path:'/admin/settings',query:{tab:'backups'}},meta:{superAdmin:true}},
+  {path:'/admin/audit-logs',redirect:{path:'/admin/settings',query:{tab:'audit'}},meta:{admin:true}},
   ...['words','samples','policies','logs'].map(view=>({path:'/admin/compliance/'+view,component:Compliance,meta:{admin:true}})),
   {path:'/admin/users',component:Users,meta:{admin:true}},
   {path:'/admin/users/:id',component:UserDetail,meta:{admin:true}},

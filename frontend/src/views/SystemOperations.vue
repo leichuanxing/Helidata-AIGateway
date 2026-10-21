@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {formatDate} from '../ui/branding'
 import {computed,ref,watch,onUnmounted} from 'vue'
-import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {api,message} from '../api/client'
-const route=useRoute(),backup=computed(()=>route.path==='/admin/backups')
+const props=defineProps<{mode?:'backups'|'audit';embedded?:boolean}>()
+const backup=computed(()=>props.mode==='backups')
 const rows=ref<any[]>([]),total=ref(0),page=ref(1),loading=ref(false),error=ref(''),creating=ref(false),downloading=ref(''),detail=ref<any>(null)
 const action=ref(''),resource=ref(''),actor=ref(''),result=ref(''),days=ref(7)
 const statuses:Record<string,string>={queued:'等待备份',running:'备份中',ready:'已完成',failed:'失败',success:'成功',failure:'失败'}
@@ -18,12 +18,12 @@ async function load(){const mine=++generation;loading.value=true;error.value='';
 async function create(){creating.value=true;try{await api.post('/admin/backups');ElMessage.success('备份任务已创建');page.value=1;await load()}catch(e){ElMessage.error(message(e))}finally{creating.value=false}}
 async function download(row:any){downloading.value=row.id;try{const r=await api.get('/admin/backups/'+row.id+'/download',{responseType:'blob'});const url=URL.createObjectURL(r.data);const link=document.createElement('a');link.href=url;link.download='helidata-'+row.id+'.tar.gz';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){ElMessage.error(message(e))}finally{downloading.value=''}}
 function time(value:string){return value?formatDate(value):'—'}
-watch(()=>route.path,()=>{page.value=1;detail.value=null;load()},{immediate:true})
+watch(()=>props.mode,()=>{page.value=1;detail.value=null;load()},{immediate:true})
 const timer=setInterval(()=>{if(backup.value&&rows.value.some(r=>['queued','running'].includes(r.status)))load()},3000)
 onUnmounted(()=>{generation++;clearInterval(timer)})
 </script>
 <template>
- <h1>{{backup?'数据备份':'管理审计'}}</h1>
+ <h2 v-if="!embedded">{{backup?'数据备份':'管理审计'}}</h2>
  <p class="muted">{{backup?'备份数据库、系统配置、Master Key及上传文件到 /data/backup/manual。备份文件含密钥，请妥善保管。':'记录登录及用户、模型供应商、模型组、API Key、合规与备份操作。保留操作时身份快照，审计记录不提供删除入口。'}}</p>
  <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
  <div class="toolbar">
@@ -37,7 +37,7 @@ onUnmounted(()=>{generation++;clearInterval(timer)})
   </template>
   <el-button :loading="loading" @click="page=1;load()">刷新查询</el-button>
  </div>
- <div class="panel">
+ <div :class="embedded?'operations-table':'panel'">
   <el-table :data="rows" v-loading="loading">
    <el-table-column label="创建时间" min-width="180"><template #default="s">{{time(s.row.created_at)}}</template></el-table-column>
    <template v-if="backup">

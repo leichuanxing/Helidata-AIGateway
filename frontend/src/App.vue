@@ -28,7 +28,8 @@ const links=computed(()=>portalMode.value?[
   {to:'/admin/compliance/words',label:'内容合规',icon:'shield'},
   {to:'/admin/usage',label:'用量统计',icon:'chart'},
   {to:'/admin/call-logs',label:'调用日志',icon:'file'},
-  ...(auth.user?.role==='super_admin'&&operationsReady?[{to:'/admin/gateway-security',label:'网关安全',icon:'shield'},{to:'/admin/settings',label:'系统设置',icon:'settings'}]:[])
+  ...(auth.user?.role==='super_admin'&&operationsReady?[{to:'/admin/gateway-security',label:'网关安全',icon:'shield'}]:[]),
+  ...(operationsReady?[{to:'/admin/settings',label:'系统设置',icon:'settings'}]:[])
 ])
 function active(to:string){return route.path.startsWith(to)||to==='/admin/compliance/words'&&route.path.startsWith('/admin/compliance/')}
 const current=computed(()=>links.value.find(x=>active(x.to)))
@@ -37,7 +38,7 @@ const section=computed(()=>({'/admin/smart-route/samples':'样本管理','/admin
 async function logout(){await auth.logout();await router.push('/login')}
 function command(value:string){
   if(value==='logout')void logout()
-  else void router.push(({'profile':'/portal/profile','portal':'/portal/models','admin':'/admin/dashboard','backups':'/admin/backups','audit':'/admin/audit-logs'} as Record<string,string>)[value]||'/portal/profile')
+  else void router.push(({'profile':'/portal/profile','portal':'/portal/models','admin':'/admin/dashboard'} as Record<string,string>)[value]||'/portal/profile')
 }
 async function openAbout(){about.value=true;if(version.value)return;try{const response=await fetch('/openapi.json');if(response.ok)version.value=(await response.json()).info.version}catch{}}
 </script>
@@ -47,7 +48,7 @@ async function openAbout(){about.value=true;if(version.value)return;try{const re
   <aside class="sidebar">
     <router-link class="brand" :to="auth.user?.role==='user'?'/portal/models':'/admin/dashboard'" :aria-label="branding.system_name+'，返回首页'" :title="branding.system_name"><span class="brand-symbol" aria-hidden="true"><img v-if="branding.logo&&!logoFailed" :src="branding.logo" alt="" @error="logoFailed=true"/><span v-else class="brand-fallback">HD</span></span><span v-if="!collapsed" class="brand-copy"><strong>{{branding.system_name}}</strong></span></router-link>
     <nav aria-label="主导航"><el-tooltip v-for="link in links" :key="link.to" :content="link.label" placement="right" :disabled="!collapsed"><router-link :to="link.to" :class="{selected:active(link.to)}" :aria-label="link.label" @mouseenter="link.to==='/admin/settings'&&warmSettingsPage()" @focus="link.to==='/admin/settings'&&warmSettingsPage()"><UiIcon :name="link.icon"/><span v-if="!collapsed">{{link.label}}</span></router-link></el-tooltip></nav>
-    <div class="sidebar-account"><el-dropdown trigger="click" placement="top-start" @command="command"><button class="user-menu" aria-label="用户菜单"><UiIcon name="users"/><span v-if="!collapsed" class="account-name">{{auth.user?.name||auth.user?.username}}</span><span v-if="!collapsed">⌃</span></button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="auth.user?.role!=='user'" command="admin">管理后台</el-dropdown-item><el-dropdown-item command="portal">用户中心</el-dropdown-item><el-dropdown-item command="profile">修改密码 / 个人设置</el-dropdown-item><el-dropdown-item v-if="auth.user?.role==='super_admin'&&operationsReady" command="backups" divided>数据备份</el-dropdown-item><el-dropdown-item v-if="auth.user?.role!=='user'&&operationsReady" command="audit">管理审计</el-dropdown-item><el-dropdown-item command="logout" divided>退出登录</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+    <div class="sidebar-account"><el-dropdown trigger="click" placement="top-start" @command="command"><button class="user-menu" aria-label="用户菜单"><UiIcon name="users"/><span v-if="!collapsed" class="account-name">{{auth.user?.name||auth.user?.username}}</span><span v-if="!collapsed">⌃</span></button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="auth.user?.role!=='user'" command="admin">管理后台</el-dropdown-item><el-dropdown-item command="portal">用户中心</el-dropdown-item><el-dropdown-item command="profile">修改密码 / 个人设置</el-dropdown-item><el-dropdown-item command="logout" divided>退出登录</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
   </aside>
   <div class="workspace"><header class="topbar"><div class="topbar-left"><button class="icon-button" :aria-label="collapsed?'展开侧栏':'收起侧栏'" @click="toggleSidebar"><UiIcon name="menu"/></button><span class="console-title">{{title}}</span><span v-if="current&&route.path!==current.to" class="muted">/ {{section}}</span></div><div class="topbar-right"><button class="console-top-link" @click="help=true">使用帮助</button><button class="console-top-link" @click="openAbout"><UiIcon name="help"/>关于</button><span class="console-language">简体中文</span><el-tooltip :content="dark?'浅色主题':'深色主题'"><button class="icon-button" :aria-label="dark?'切换浅色主题':'切换深色主题'" @click="toggleTheme"><UiIcon :name="dark?'sun':'moon'"/></button></el-tooltip></div></header><main :aria-busy="navigating"><div v-if="navigating" class="navigation-progress" role="progressbar" aria-label="正在打开页面"></div><router-view v-slot="{Component,route:viewRoute}"><Transition name="page" mode="out-in"><div :key="viewRoute.path" class="page-view"><component :is="Component"/></div></Transition></router-view></main></div>
 </div>
