@@ -29,3 +29,17 @@
 本次尚未部署。需备份数据库、完整数据目录并保留旧容器，部署后通过管理员接口将账号 143 地址改为同源 /api/v1（核对配置版本后修改）。保留密钥、模型、授权及端口。失败回滚容器和数据。预计重启中断 30–60 秒，不推送 GitHub。真实供应商调用已验证原生接口；部署后管理员入口未完成真实生图验收。
 
 隔离容器完整 HTTP 回归：3 项，2 项通过、1 项显式 185 秒专项跳过，耗时 5.441 秒。覆盖原生及兼容接口、管理员生图、API Key、同名重建、合规拦截、负载均衡、失败单次调用及日志。候选镜像 sha256:3c5fa72995d017f2ac0b74e2bb53dc6610d8ce8474715532f9f10a35bbbc66c4。
+
+## 2026-10-21 生产部署
+
+用户明确批准“现在部署并修正地址”。固定候选镜像 3c5fa72995d017f2ac0b74e2bb53dc6610d8ce8474715532f9f10a35bbbc66c4 已上线，容器健康、数据库版本0033，登录页/管理页面/健康接口返回200。
+
+备份：/opt/AIGateway/backups/before-aliyun-native-images-20261021T054136Z（SQL、完整停止后数据卷、容器配置）。保留旧容器 helidata-ai-gateway-before-aliyun-native-images-20261021T054136Z。未触发回滚。
+
+通过管理员API并携带 expected_config_version=1 将账号143地址改为 https://dashscope.aliyuncs.com/api/v1。随后重新读取详情，确认配置版本2及原文生图模型映射。密钥未提交更换字段。第一次验证脚本错误地期望 PATCH 精简响应包含 models，地址保存成功后停止；未发起生图请求。修正为 GET 详情核对后继续验收。
+
+正式入口真实验收通过：POST /api/admin/chat-test/images，HTTP200，1张1024×1024，耗时54.95秒，output_image_count=1 / qima_output_1k；Request ID req_349ff9a734c7432db89aae1136546b9a。日志状态success、实际账号“文生图”、上游HTTP200、total_tokens=null；本次无适用合规策略。管理员验收会话已退出。
+
+本轮共两次真实生图（直接原生诊断一次、上线正式入口一次），均各1张1K图片。按北京区官方原价合计约0.50元，未超过授权1元，实际扣费以供应商账单为准。无自动重试。线上完整API链路已验证；本轮未重新执行浏览器图片预览验收。
+
+部署后核对镜像摘要一致、容器healthy；Supervisor确认nginx、uvicorn、PostgreSQL、Redis均RUNNING。不推送GitHub。
