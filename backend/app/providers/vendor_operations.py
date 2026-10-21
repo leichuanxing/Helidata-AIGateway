@@ -4,6 +4,47 @@ from app.providers.base import CustomOpenAIProvider,ProviderFailure
 from app.core.config import get_settings
 
 class AliyunProvider(CustomOpenAIProvider):
+    async def image_generation(self,payload):
+        # Native mode is explicit in the configured base URL. Never retry a
+        # possibly billable compatible request through a second endpoint.
+        if not self.base_url.endswith('/api/v1'):
+            return await super().image_generation(payload)
+        allowed={'model','prompt','n','size','stream','response_format','negative_prompt','seed',
+                 'prompt_extend','prompt_extend_mode','enable_thinking','watermark'}
+        if (set(payload)-allowed or payload.get('stream') or payload.get('response_format','url')!='url'
+                or type(payload.get('n',1)) is not int or not 1<=payload.get('n',1)<=6
+                or not payload['model'].startswith(('qwen-image-3.0','qwen-image-2.1'))):
+            raise ProviderFailure('UPSTREAM_REQUEST_REJECTED',status=400,safe_to_retry=True)
+        parameters={k:v for k,v in payload.items() if k not in ('model','prompt','stream','response_format','size')}
+        size=payload.get('size')
+        if size and size!='auto':
+            import re
+            if not isinstance(size,str) or not re.fullmatch(r'[1-9][0-9]{1,4}x[1-9][0-9]{1,4}',size):
+                raise ProviderFailure('UPSTREAM_REQUEST_REJECTED',status=400,safe_to_retry=True)
+            parameters['size']=size.replace('x','*')
+        result=await self.request('POST','/services/aigc/multimodal-generation/generation',
+            {'model':payload['model'],'input':{'messages':[{'role':'user','content':[{'text':payload['prompt']}]}]},'parameters':parameters},
+            timeout=get_settings().gateway.nonstream_timeout,max_bytes=32*1024*1024)
+        try:
+            choices=result['output']['choices']
+            if not isinstance(choices,list) or not choices:raise ValueError()
+            rows=[]
+            for choice in choices:
+                if choice.get('finish_reason') not in (None,'stop'):raise ValueError()
+                content=choice['message']['content']
+                if not isinstance(content,list):raise ValueError()
+                for part in content:
+                    if not isinstance(part,dict):raise ValueError()
+                    if 'image' in part:
+                        if not isinstance(part['image'],str) or not part['image']:raise ValueError()
+                        rows.append({'url':part['image']})
+            if not rows or len(rows)>payload.get('n',1):raise ValueError()
+        except (KeyError,TypeError,ValueError,AttributeError):
+            raise ProviderFailure('UPSTREAM_INVALID_RESPONSE') from None
+        return {'created':int(time.time()),'data':rows,
+                **({'usage':result['usage']} if isinstance(result.get('usage'),dict) else {}),
+                **({'id':result['request_id']} if isinstance(result.get('request_id'),str) else {})}
+
     async def list_models(self):
         if not self.base_url.endswith('/api/v1'):
             return await super().list_models()

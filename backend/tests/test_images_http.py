@@ -32,6 +32,8 @@ class ImagesHTTPTests(unittest.IsolatedAsyncioTestCase):
                 if owner.mode=='slow':time.sleep(185)
                 if owner.mode=='error':return self.answer(500,{'error':{'message':'fixture secret'}})
                 if owner.mode=='invalid':return self.answer(200,{'created':1,'data':[]})
+                if self.path=='/api/v1/services/aigc/multimodal-generation/generation':
+                    return self.answer(200,{'output':{'choices':[{'finish_reason':'stop','message':{'content':[{'image':'https://fixture.invalid/native.png'}]}}]},'usage':{'output_image_count':1}})
                 row={'b64_json':'aGVsbG8='} if owner.mode=='base64' else {'url':'https://fixture.invalid/generated.png'}
                 self.answer(200,{'created':1,'data':[row],'usage':{'output_image_count':1,'output_width':1024,'output_height':1024}})
         self.server=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
@@ -111,7 +113,18 @@ class ImagesHTTPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(self.calls[-1][2]['prompt_extend'])
                 log=await self.api('GET','admin/call-logs/'+r.headers['x-request-id'])
                 self.assertEqual(log['operation'],'images');self.assertIsNone(log['total_tokens'])
-            self.mode='url';before=len(self.calls)
+            self.mode='url'
+            await self.api('PATCH',path,{'base_url':f'http://127.0.0.1:{self.server.server_port}/api/v1'})
+            native=await image(size='1024x1024')
+            self.assertEqual(native.status_code,200,native.text[:200])
+            self.assertEqual(native.json()['data'],[{'url':'https://fixture.invalid/native.png'}])
+            self.assertEqual(self.calls[-1][1],'/api/v1/services/aigc/multimodal-generation/generation')
+            self.assertEqual(self.calls[-1][2]['parameters']['size'],'1024*1024')
+            native=await self.admin.post('/api/admin/chat-test/images',json={'model':name,'prompt':'a dog','consent':True})
+            self.assertEqual(native.status_code,200,native.text[:200])
+            log=await self.api('GET','admin/call-logs/'+native.headers['x-request-id'])
+            self.assertEqual(log['status'],'success');self.assertEqual(log['operation'],'images');self.assertIsNone(log['total_tokens'])
+            before=len(self.calls)
             for values in ({'prompt':'  '},{'n':0},{'n':True},{'stream':True}):self.assertEqual((await image(**values)).status_code,422)
             self.assertEqual(len(self.calls),before)
             policy=await self.api('POST','admin/compliance/policies',{'name':name,'status':'enabled','action':'block','models':[name]})
