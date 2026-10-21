@@ -18,3 +18,13 @@
 ## 部署
 
 用户授权“后续直接部署”。与已验证的Token连续曲线一并上线，先备份数据库、完整数据目录并保留原容器，固定镜像替换，健康及迁移0034检查，失败回滚完整数据和原容器。原有配置、端口、账号和密钥不修改。不推送GitHub。生产结果待补充。
+
+最终候选镜像：sha256:2a436df5c4d8afcb0f572633dff23d21ca6336cc604c8f8ffd2968e13e4ff7ec。隔离环境实测0034降至0033再升级0034，原有users/providers/call_logs数量一致；最终构建时间显示已遵循系统时区。正在按用户授权部署。
+
+### 生产结果
+
+已部署固定镜像 2a436df5c4d8afcb0f572633dff23d21ca6336cc604c8f8ffd2968e13e4ff7ec，数据库版本0034，容器healthy；nginx/uvicorn/PostgreSQL/Redis均RUNNING，nginx语法检查通过。备份路径 /opt/AIGateway/backups/before-chat-history-20261021T061302Z；旧容器 helidata-ai-gateway-before-chat-history-20261021T061302Z，未触发回滚。
+
+线上管理员读取历史API HTTP200，初始0条；无认证访问401；模型目录仍6个并保留qwen-image-3.0-pro；账号143原生/api/v1配置保持。未向生产写入测试对话或调用真实供应商。
+
+线上浏览器确认“对话历史”按钮及抽屉正常，显示保留范围与尚无历史记录，截图 .deployment/chat-history-production-20261021.png。验收会话均已退出。前次连续Token曲线已随本镜像部署。不推送GitHub。
