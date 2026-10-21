@@ -5,9 +5,24 @@ import {api,message,sessionFetch} from '../api/client'
 import {useRouter} from 'vue-router'
 import {ACCEPT,MAX_ATTACHMENTS,MAX_ATTACHMENT_BYTES,formatBytes,readAttachment,boundedMessages} from '../utils/chatAttachments'
 import {imageTestPayload,generatedImages,type GeneratedImage} from '../utils/imagePlayground'
+import ChatHistoryDrawer from '../components/ChatHistoryDrawer.vue'
+import {historyId,historyPayload} from '../utils/chatHistory'
 import type {Attachment} from '../utils/chatAttachments'
 type Model={logical_model:string;model_type:string;configured:boolean;virtual:boolean;balanced?:boolean;groups:string[]}
 type Turn={kind?:'chat'|'image';images?:GeneratedImage[];prompt:string;attachments:Attachment[];answer:string;reasoning:string;status:'pending'|'done'|'error'|'cancelled';error:string;requestId:string;compliance:string;usage:any;elapsed:number;rounds:number;finish:string}
+const historyOpen=ref(false),historyError=ref(''),historySaving=ref(false)
+let conversationId=historyId(),historyQueue:Promise<unknown>=Promise.resolve(),historyPending=0
+let failedHistory:{id:string;payload:ReturnType<typeof historyPayload>}|null=null
+function queueHistory(id:string,payload:ReturnType<typeof historyPayload>){
+ historyPending++;historySaving.value=true
+ historyQueue=historyQueue.catch(()=>{}).then(()=>api.put('/admin/chat-test/history/'+id,payload)).then(()=>{if(failedHistory?.id===id){failedHistory=null;historyError.value=''}}).catch(e=>{failedHistory={id,payload};historyError.value='对话历史保存失败：'+message(e)}).finally(()=>{historyPending--;historySaving.value=historyPending>0})
+}
+function retryHistory(){if(failedHistory)queueHistory(failedHistory.id,failedHistory.payload)}
+function saveHistory(){
+ if(!selected.value||!turns.value.some(t=>t.status!=='pending'))return
+ const id=conversationId,payload=historyPayload(model.value,selected.value.model_type,{system:system.value,temperature:temperature.value,max_tokens:maxTokens.value,stream:stream.value,image_count:imageCount.value,image_size:imageSize.value},turns.value)
+ queueHistory(id,payload)
+}
 const router=useRouter(),models=ref<Model[]>([]),model=ref(''),loading=ref(false),loadError=ref('')
 const turns=ref<Turn[]>([]),prompt=ref(''),system=ref(''),temperature=ref(0.7),maxTokens=ref(5000),stream=ref(true),busy=ref(false)
 const attachments=ref<Attachment[]>([]),reading=ref(false),settingsOpen=ref(true),preview=ref<Attachment|null>(null)
@@ -25,11 +40,11 @@ async function load(){
  try{models.value=(await api.get('/admin/chat-test/models')).data.data.models;if(!models.value.some(m=>m.logical_model===model.value))model.value=models.value.find(m=>m.configured)?.logical_model||''}
  catch(e){loadError.value=message(e)}finally{loading.value=false}
 }
-watch(model,()=>{imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];preview.value=null})
+watch(model,()=>{conversationId=historyId();imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];preview.value=null})
 watch(multimodal,(value,previous)=>{if(previous&&!value){attachments.value=[];turns.value=[];preview.value=null}})
 async function scroll(force=false){const nearBottom=!viewport.value||viewport.value.scrollHeight-viewport.value.scrollTop-viewport.value.clientHeight<120;await nextTick();if(viewport.value&&(force||nearBottom))viewport.value.scrollTop=viewport.value.scrollHeight}
 function stop(){controller?.abort()}
-function clear(){if(!busy.value&&!reading.value){imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];prompt.value='';preview.value=null}}
+function clear(){if(!busy.value&&!reading.value){conversationId=historyId();imageConsent.value=false;generatedPreview.value=null;turns.value=[];attachments.value=[];prompt.value='';preview.value=null}}
 function keydown(event:KeyboardEvent){if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(canSend.value)void send()}}
 async function copy(text:string){try{await navigator.clipboard.writeText(text);ElMessage.success('已复制')}catch{ElMessage.warning('当前浏览器不支持复制，请选择文本手动复制')}}
 async function addFiles(files:File[]){
@@ -92,7 +107,7 @@ async function send(){
   }
   turn.value.status='done'
  }catch(error:any){turn.value.status=signal.aborted?'cancelled':'error';turn.value.error=signal.aborted?'已停止生成，当前回复可能不完整':error.response?message(error):error.message||'请求失败，请重试'}
- finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;if(!disposed)void scroll()}
+ finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;saveHistory();if(!disposed)void scroll()}
 }
 async function sendImage(){
  let payload:ReturnType<typeof imageTestPayload>
@@ -107,15 +122,17 @@ async function sendImage(){
   if(!response.ok||value.error)throw new Error(value.error?.message||'图片生成失败（HTTP '+response.status+'）')
   turn.value.images=generatedImages(value);turn.value.usage=value.usage||null;turn.value.status='done'
  }catch(error:any){turn.value.status=signal.aborted?'cancelled':'error';turn.value.error=signal.aborted?'已停止等待；上游可能已生成图片并产生费用，请查看调用日志，避免重复提交':error.message||'图片生成失败'}
- finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;if(!disposed)void scroll()}
+ finally{turn.value.elapsed=Math.round(performance.now()-started);busy.value=false;controller=null;saveHistory();if(!disposed)void scroll()}
 }
 onMounted(()=>{if(window.matchMedia('(max-width:800px)').matches)settingsOpen.value=false;void load()})
 onBeforeUnmount(()=>{disposed=true;stop()})
 </script>
 <template>
 <div class="chat-test">
- <PageHeader title="对话测试"><el-button :loading="loading" :disabled="busy||reading" @click="load">刷新模型</el-button><el-button :aria-expanded="settingsOpen" @click="settingsOpen=!settingsOpen">{{settingsOpen?'收起参数':'参数设置'}}</el-button></PageHeader>
+ <ChatHistoryDrawer v-model="historyOpen"/>
+ <PageHeader title="对话测试"><el-button @click="historyOpen=true">对话历史</el-button><el-button :loading="loading" :disabled="busy||reading" @click="load">刷新模型</el-button><el-button :aria-expanded="settingsOpen" @click="settingsOpen=!settingsOpen">{{settingsOpen?'收起参数':'参数设置'}}</el-button></PageHeader>
  <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false"/>
+ <el-alert v-if="historyError" :title="historyError" type="warning" :closable="false"><el-button link @click="retryHistory">重试保存</el-button></el-alert>
  <div class="chat-grid" :class="{'settings-hidden':!settingsOpen}">
   <section class="panel chat-conversation" aria-label="测试对话">
    <header class="conversation-toolbar">
@@ -140,7 +157,7 @@ onBeforeUnmount(()=>{disposed=true;stop()})
    <div class="chat-composer" @paste="paste">
     <div v-if="attachments.length" class="attachment-list"><div v-for="file in attachments" :key="file.id" class="attachment-card"><button class="attachment-preview" @click="preview=file"><img v-if="file.kind==='image'" :src="file.data" :alt="file.name"/><span v-else class="file-kind">{{file.kind==='pdf'?'PDF':'TXT'}}</span><span class="file-name">{{file.name}}<small>{{formatBytes(file.size)}}</small></span></button><el-button link :aria-label="'移除 '+file.name" :disabled="busy" @click="remove(file.id)">×</el-button></div></div>
     <el-input v-model="prompt" type="textarea" :rows="3" resize="none" maxlength="16000" show-word-limit :placeholder="imageMode?'描述你希望生成的画面，Enter 生成…':multimodal?'输入问题，或上传图片、文件后发送…':'输入问题，Enter 发送，Shift+Enter 换行'" @keydown="keydown"/>
-    <div v-if="imageMode" class="image-confirm"><el-checkbox v-model="imageConsent" :disabled="busy">我确认本次文生图调用可能产生费用</el-checkbox></div><div class="composer-actions"><div class="composer-tools"><input ref="fileInput" class="file-input" type="file" multiple :accept="ACCEPT" aria-label="选择图片或文件" @change="chooseFiles"/><el-button v-if="multimodal" :loading="reading" :disabled="busy||attachments.length>=4" @click="fileInput?.click()">＋ 图片 / 文件</el-button><span class="muted">{{multimodal?attachments.length+' / 4 · '+formatBytes(attachmentBytes)+' / 3 MB':'Enter 发送 · Shift+Enter 换行'}}</span></div><el-button v-if="busy" type="danger" plain @click="stop">停止生成</el-button><el-button v-else type="primary" :disabled="!canSend" @click="send">{{imageMode?'生成图片':'发送'}}</el-button></div>
+    <div v-if="imageMode" class="image-confirm"><el-checkbox v-model="imageConsent" :disabled="busy">我确认本次文生图调用可能产生费用</el-checkbox></div><div class="composer-actions"><span class="history-state" :title="historyError">{{historySaving?'保存历史中…':historyError?'历史未保存':turns.length?'自动保存历史':''}}</span><div class="composer-tools"><input ref="fileInput" class="file-input" type="file" multiple :accept="ACCEPT" aria-label="选择图片或文件" @change="chooseFiles"/><el-button v-if="multimodal" :loading="reading" :disabled="busy||attachments.length>=4" @click="fileInput?.click()">＋ 图片 / 文件</el-button><span class="muted">{{multimodal?attachments.length+' / 4 · '+formatBytes(attachmentBytes)+' / 3 MB':'Enter 发送 · Shift+Enter 换行'}}</span></div><el-button v-if="busy" type="danger" plain @click="stop">停止生成</el-button><el-button v-else type="primary" :disabled="!canSend" @click="send">{{imageMode?'生成图片':'发送'}}</el-button></div>
     <p class="composer-note">{{imageMode?'文生图只发送当前描述，不携带聊天历史或附件；停止等待后，上游仍可能计费。':multimodal?'支持 PNG、JPEG、GIF、WebP、PDF 及 UTF-8 文本文件（附件总大小 ≤ 3 MB）。':'仅多模态模型支持附件。'}} <template v-if="!imageMode">附件随发送提交给所选供应商。</template></p>
    </div>
   </section>
@@ -183,3 +200,5 @@ onBeforeUnmount(()=>{disposed=true;stop()})
 <style scoped>.generated-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;max-width:760px}.generated-images figure{margin:0;min-width:0}.generated-images button{padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft);cursor:zoom-in;width:100%}.generated-images img{display:block;width:100%;max-height:420px;object-fit:contain;min-height:100px}.generated-images figcaption{color:var(--muted);font-size:11px;margin-top:6px}.parameter-form :deep(.el-checkbox){height:auto;white-space:normal;align-items:start;margin-top:12px}.parameter-form :deep(.el-checkbox__label){white-space:normal;line-height:1.7}</style>
 
 <style scoped>.image-confirm{font-size:12px;margin-top:10px}.image-confirm :deep(.el-checkbox){height:auto;white-space:normal}.image-confirm :deep(.el-checkbox__label){white-space:normal;line-height:1.6}</style>
+
+<style scoped>.history-state{font-size:11px;color:var(--muted);white-space:nowrap}.conversation-toolbar{flex-wrap:wrap}</style>

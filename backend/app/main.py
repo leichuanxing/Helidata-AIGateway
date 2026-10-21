@@ -209,6 +209,8 @@ app.include_router(settings_router)
 
 from app.api.admin.chat_test import router as chat_test_router
 app.include_router(chat_test_router)
+from app.api.admin.chat_history import router as chat_history_router
+app.include_router(chat_history_router)
 
 from app.api.admin.gateway_security import router as security_router
 app.include_router(security_router)
