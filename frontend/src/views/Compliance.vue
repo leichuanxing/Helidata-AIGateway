@@ -7,13 +7,14 @@ import {api,message} from '../api/client'
 import {formatDate} from '../ui/branding'
 const route=useRoute(),router=useRouter(),view=computed(()=>route.path.split('/').pop()||'words')
 const tabs={words:'敏感词',samples:'审核样本',policies:'策略组',logs:'审核日志'}
-const label:Record<string,string>={low:'低',medium:'中',high:'高',critical:'严重',enabled:'启用',disabled:'禁用',not_built:'未构建',pending:'排队中',processing:'构建中',ready:'已就绪',failed:'构建失败',audit:'仅审计',block:'拦截',pass:'通过',word:'关键词',sample:'样本语义',text:'文本',wildcard:'通配符',regex:'正则',chat:'OpenAI Completions',messages:'Anthropic Messages',responses:'OpenAI Responses',embeddings:'Embeddings',images:'Images',rerank:'Rerank'}
+const label:Record<string,string>={low:'低',medium:'中',high:'高',critical:'严重',enabled:'启用',disabled:'禁用',not_built:'未构建',pending:'排队中',processing:'构建中',ready:'已就绪',stale:'版本过期',failed:'构建失败',audit:'仅审计',block:'拦截',pass:'通过',word:'关键词',sample:'审核样本',text:'文本',wildcard:'通配符',regex:'正则',chat:'OpenAI Completions',messages:'Anthropic Messages',responses:'OpenAI Responses',embeddings:'Embeddings',images:'Images',rerank:'Rerank'}
 const rows=ref<any[]>([]),policies=ref<any[]>([]),words=ref<any[]>([]),samples=ref<any[]>([]),groups=ref<any[]>([]),models=ref<any[]>([])
 const loading=ref(false),saving=ref(false),building=ref(false),error=ref(''),page=ref(1),total=ref(0),selected=ref<number[]>([]),remoteVectors=ref(false),dialog=ref(false),editing=ref<number|null>(null),detail=ref<any>(null),importing=ref(false),busy=reactive<Record<number,boolean>>({})
 const filters=reactive({q:'',policy_id:undefined as number|undefined,status:'',vector_status:'',action:'',risk:'',source:'',request_id:String(route.query.request_id||'')})
 const days=ref(7),range=ref<[Date,Date]|null>(null)
 const blank=()=>({pattern:'',kind:'text',risk:'medium' as string|null,status:'enabled',remark:'',text:'',name:'',action:'audit',description:'',policy_id:undefined as number|undefined,word_ids:[] as number[],sample_ids:[] as number[],group_ids:[] as number[],models:[] as string[],threshold:.85})
 const form=reactive(blank()),importForm=reactive({policy_id:undefined as number|undefined,lines:'',status:'enabled'})
+const complianceEnabled=ref(true),globalThreshold=ref<number|null>(null)
 let generation=0
 async function load(){
  const mine=++generation;loading.value=true;error.value=''
@@ -25,9 +26,11 @@ async function load(){
    Object.assign(params,{request_id:filters.request_id||undefined,action:filters.action||undefined,risk:filters.risk||undefined,source:filters.source||undefined,policy_id:filters.policy_id})
    const end=range.value?.[1]||new Date(),start=range.value?.[0]||new Date(end.getTime()-days.value*86400000);params.start=start.toISOString();params.end=end.toISOString()
   }
-  const [result,options]=await Promise.all([api.get('/admin/compliance/'+view.value,{params}),api.get('/admin/compliance/policies')])
+  const [result,options,groupOptions]=await Promise.all([api.get('/admin/compliance/'+view.value,{params}),view.value==='policies'?Promise.resolve(null):api.get('/admin/compliance/policies'),view.value==='policies'?api.get('/admin/user-group-options'):Promise.resolve(null)])
   if(mine!==generation)return
-  const data=result.data.data;rows.value=data.items;total.value=data.total??data.items.length;policies.value=options.data.data.items;selected.value=[]
+  if(groupOptions)groups.value=groupOptions.data.data.items||groupOptions.data.data
+  const governance=(options||result).data.data;complianceEnabled.value=governance.compliance_enabled!==false;globalThreshold.value=governance.semantic_threshold??null
+  const data=result.data.data;rows.value=data.items;total.value=data.total??data.items.length;policies.value=options?.data.data.items||data.items;selected.value=[]
   if(view.value==='samples')remoteVectors.value=String(data.model_version||'').startsWith('upstream:')
  }catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}
 }
@@ -86,7 +89,7 @@ async function importWords(){
 function riskOf(row:any){const risks=(row.matches||[]).flatMap((m:any)=>m.risk?[m.risk]:(m.evidence||[]).map((e:any)=>e.risk));return ['critical','high','medium','low'].find(r=>risks.includes(r))||''}
 function riskType(r:string){return ['high','critical'].includes(r)?'danger':r==='medium'?'warning':'success'}
 function policyNames(row:any){return row.policies?.map((p:any)=>p.name).join('、')||'未分配（历史配置）'}
-function sourceNames(row:any){return [...new Set((row.matches||[]).flatMap((m:any)=>(m.evidence||[]).map((e:any)=>label[e.source]||e.source)))].join('、')||'—'}
+function sourceNames(row:any){return [...new Set((row.matches||[]).flatMap((m:any)=>(m.evidence||[]).map((e:any)=>e.match_type==='literal'?'样本原文':e.source==='sample'?'样本语义':label[e.source]||e.source)))].join('、')||'—'}
 function groupNames(ids:number[]){return ids.map(i=>groups.value.find(g=>g.id===i)?.name||'#'+i).join('、')||'全部'}
 function reset(reload=true){Object.assign(filters,{q:'',policy_id:undefined,status:'',vector_status:'',action:'',risk:'',source:'',request_id:''});range.value=null;days.value=7;page.value=1;if(reload)load()}
 watch(()=>route.fullPath,()=>{rows.value=[];total.value=0;selected.value=[];dialog.value=false;detail.value=null;reset(false);filters.request_id=String(route.query.request_id||'');load()},{immediate:true})
@@ -96,17 +99,19 @@ onUnmounted(()=>{clearInterval(timer);generation++})
 <template>
  <div class="compliance-page module-page">
   <PageHeader title="内容合规"/>
+  <el-alert v-if="!complianceEnabled" title="内容合规总开关已关闭，当前策略不会执行。请在系统设置的内容合规中启用。" type="warning" :closable="false" class="gap"/>
   <el-alert v-if="error" :title="error" type="error" :closable="false" class="gap"/>
   <div class="panel module-panel">
    <ManagementTabs :value="view" :items="tabs" @change="router.push('/admin/compliance/'+$event)"/>
    <div class="toolbar module-filters">
     <el-select v-if="view!=='policies'" v-model="filters.policy_id" clearable filterable placeholder="全部策略组" class="filter"><el-option v-for="p in policies" :key="p.id" :label="p.name" :value="p.id"/></el-select>
     <el-select v-if="view!=='logs'" v-model="filters.status" clearable placeholder="全部状态" class="filter"><el-option label="启用" value="enabled"/><el-option label="禁用" value="disabled"/></el-select>
-    <el-select v-if="view==='samples'" v-model="filters.vector_status" clearable placeholder="全部向量状态" class="filter"><el-option v-for="s in ['not_built','pending','processing','ready','failed']" :key="s" :label="label[s]" :value="s"/></el-select>
+    <el-select v-if="view==='samples'" v-model="filters.vector_status" clearable placeholder="全部向量状态" class="filter"><el-option v-for="s in ['not_built','pending','processing','ready','stale','failed']" :key="s" :label="label[s]" :value="s"/></el-select>
     <template v-if="view==='logs'">
+     <el-input v-model="filters.request_id" clearable placeholder="Request ID（精确匹配）" class="search" @keyup.enter="page=1;load()"/>
      <el-select v-model="filters.action" clearable placeholder="全部动作" class="filter"><el-option v-for="a in ['block','audit','pass']" :key="a" :label="label[a]" :value="a"/></el-select>
      <el-select v-model="filters.risk" clearable placeholder="全部风险等级" class="filter"><el-option v-for="r in ['low','medium','high','critical']" :key="r" :label="label[r]" :value="r"/></el-select>
-     <el-select v-model="filters.source" clearable placeholder="全部检测方式" class="filter"><el-option label="关键词" value="word"/><el-option label="样本语义" value="sample"/></el-select>
+     <el-select v-model="filters.source" clearable placeholder="全部检测方式" class="filter"><el-option label="关键词" value="word"/><el-option label="审核样本（原文 / 语义）" value="sample"/></el-select>
      <el-select v-model="days" class="filter" @change="range=null"><el-option v-for="d in [1,7,30]" :key="d" :label="'最近'+d+'天'" :value="d"/></el-select>
      <el-date-picker v-model="range" type="datetimerange" start-placeholder="开始时间" end-placeholder="结束时间"/>
     </template>
@@ -119,7 +124,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
     <template v-if="view==='samples'"><el-button :loading="building" :disabled="!selected.length" @click="build(false)">构建选中向量</el-button><el-button :loading="building" :disabled="!total" @click="build(true)">构建全部向量</el-button></template>
     <span v-if="(view==='words'||view==='samples')&&!policies.length" class="muted">请先创建策略组，再添加{{tabs[view as keyof typeof tabs]}}。</span>
    </div>
-   <el-alert v-if="view==='samples'" type="info" :closable="false" :title="(remoteVectors?'使用系统设置中的共享向量服务；构建向量可能产生费用。':'使用本地向量服务。')+'新增或修改文本后需构建向量；未就绪、禁用及版本过期的样本不参与语义检测。'" class="gap module-note"/>
+   <el-alert v-if="view==='samples'" type="info" :closable="false" :title="(remoteVectors?'使用系统设置中的共享向量服务；构建向量可能产生费用。':'使用本地向量服务。')+'样本每个非空行始终参与原文匹配；语义检测需向量就绪且版本一致。修改文本或更换向量模型后请重新构建。'" class="gap module-note"/>
    <el-table :data="rows" v-loading="loading" @selection-change="(list:any[])=>selected=list.map(r=>r.id)" row-key="id" empty-text="暂无记录">
     <el-table-column v-if="view==='samples'" type="selection" width="44"/>
     <el-table-column v-if="view==='words'" prop="pattern" label="敏感词" min-width="220" show-overflow-tooltip/>
@@ -127,8 +132,9 @@ onUnmounted(()=>{clearInterval(timer);generation++})
     <template v-if="view==='words'||view==='samples'">
      <el-table-column label="策略组" min-width="160"><template #default="{row}">{{policyNames(row)}}</template></el-table-column>
      <el-table-column v-if="view==='words'" label="匹配方式" width="110"><template #default="{row}">{{label[row.kind]}}</template></el-table-column>
-     <el-table-column v-if="view==='samples'" label="向量状态" width="120"><template #default="{row}"><el-tag :type="row.vector_status==='ready'?'success':row.vector_status==='failed'?'danger':'info'">{{label[row.vector_status]}}</el-tag></template></el-table-column>
+     <el-table-column v-if="view==='samples'" label="向量状态" width="120"><template #default="{row}"><el-tag :type="row.vector_status==='ready'?'success':row.vector_status==='failed'?'danger':row.vector_status==='stale'?'warning':'info'">{{label[row.vector_status]}}</el-tag></template></el-table-column>
      <el-table-column v-if="view==='samples'" prop="vector_error" label="构建错误" min-width="170" show-overflow-tooltip/>
+     <el-table-column label="风险等级" width="110"><template #default="{row}"><el-tag :type="riskType(row.risk)">{{label[row.risk]}}</el-tag></template></el-table-column>
      <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip/>
     </template>
     <template v-if="view==='policies'">
@@ -136,6 +142,8 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-table-column label="动作" width="110"><template #default="{row}"><el-tag :type="row.action==='block'?'danger':'warning'">{{label[row.action]}}</el-tag></template></el-table-column>
      <el-table-column label="风险等级" width="120"><template #default="{row}"><el-tag v-if="row.risk" :type="riskType(row.risk)">{{label[row.risk]}}</el-tag><span v-else>按规则（历史）</span></template></el-table-column>
      <el-table-column label="敏感词 / 样本" width="140"><template #default="{row}">{{row.word_ids.length}} / {{row.sample_ids.length}}</template></el-table-column>
+     <el-table-column label="适用用户组" min-width="150"><template #default="{row}">{{groupNames(row.group_ids)}}</template></el-table-column>
+     <el-table-column label="适用模型" min-width="180" show-overflow-tooltip><template #default="{row}">{{row.models.join("、")||"全部模型"}}</template></el-table-column>
      <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip/>
     </template>
     <el-table-column v-if="view!=='logs'" label="状态" width="100"><template #default="{row}"><el-switch :model-value="row.status==='enabled'" :loading="busy[row.id]" @change="(value:any)=>toggle(row,value)" :aria-label="'启停 '+(row.name||row.pattern||row.text)"/></template></el-table-column>
@@ -164,6 +172,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-form-item v-if="view==='words'" label="敏感词" required><el-input v-model="form.pattern" maxlength="256"/></el-form-item>
      <el-form-item v-else label="样本文本" required><el-input v-model="form.text" type="textarea" :rows="7" maxlength="2000" show-word-limit/></el-form-item>
      <el-form-item v-if="view==='words'" label="匹配方式"><el-select v-model="form.kind"><el-option v-for="k in ['text','wildcard','regex']" :key="k" :value="k" :label="label[k]"/></el-select><p class="muted">文本包含匹配忽略大小写；通配符支持 * 和 ?；正则执行有时限。</p></el-form-item>
+     <el-form-item label="规则风险等级"><el-select v-model="form.risk"><el-option v-for="r in ['low','medium','high']" :key="r" :value="r" :label="label[r]"/></el-select><p class="muted">策略组指定风险等级时，以策略组为准。</p></el-form-item>
      <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="3" maxlength="2000" show-word-limit/></el-form-item>
     </template>
     <template v-else>
@@ -175,7 +184,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-collapse><el-collapse-item title="规则与适用范围" name="scope">
       <el-form-item label="敏感词"><el-select v-model="form.word_ids" multiple filterable style="width:100%"><el-option v-for="w in words" :key="w.id" :value="w.id" :label="w.pattern+' · '+label[w.status]"/></el-select></el-form-item>
       <p class="muted">审核样本每个非空行先进行原文匹配；未命中原文时使用已构建向量进行语义匹配。需要精确匹配短词时也可配置敏感词。</p><el-form-item label="审核样本"><el-select v-model="form.sample_ids" multiple filterable style="width:100%"><el-option v-for="s in samples" :key="s.id" :value="s.id" :label="s.text.slice(0,45)+' · '+label[s.vector_status]"/></el-select></el-form-item>
-      <el-form-item label="语义阈值"><el-input-number v-model="form.threshold" :min="0" :max="1" :step=".01" :precision="2"/><p class="muted">系统配置全局阈值时，以全局值为准。</p></el-form-item>
+      <el-form-item label="语义阈值"><el-input-number v-model="form.threshold" :min="0" :max="1" :step=".01" :precision="2"/><p class="muted">{{globalThreshold===null?'当前使用本策略阈值。':'系统全局阈值为 '+globalThreshold+'，将覆盖本策略阈值。'}}</p></el-form-item>
       <el-form-item label="用户组"><el-select v-model="form.group_ids" multiple filterable placeholder="全部用户组" style="width:100%"><el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name"/></el-select></el-form-item>
       <el-form-item label="模型"><el-select v-model="form.models" multiple filterable placeholder="全部模型" style="width:100%"><el-option v-for="m in models" :key="m.name" :value="m.name" :label="m.name"/></el-select></el-form-item>
      </el-collapse-item></el-collapse>
@@ -195,7 +204,7 @@ onUnmounted(()=>{clearInterval(timer);generation++})
     <h3>命中详情</h3><el-empty v-if="!detail.matches?.length" description="未命中违规依据"/>
     <div v-for="(m,i) in detail.matches" :key="i" class="evidence">
      <h4>{{m.policy_name}} · {{label[m.action]}}</h4>
-     <el-table :data="m.evidence"><el-table-column label="检测方式" width="100"><template #default="{row}">{{row.match_type==='literal'?'样本原文':label[row.source]}}</template></el-table-column><el-table-column label="证据" min-width="230"><template #default="{row}">{{row.matched_text||row.text||'历史未保存原文 · #'+row.id}}</template></el-table-column><el-table-column label="置信度" width="100"><template #default="{row}">{{row.similarity===undefined?'—':Number(row.similarity).toFixed(6)}}</template></el-table-column><el-table-column label="风险" width="80"><template #default="{row}">{{label[row.risk]}}</template></el-table-column></el-table>
+     <el-table :data="m.evidence"><el-table-column label="检测方式" width="100"><template #default="{row}">{{row.match_type==='literal'?'样本原文':row.source==='sample'?'样本语义':label[row.source]}}</template></el-table-column><el-table-column label="证据" min-width="230"><template #default="{row}">{{row.matched_text||row.text||'历史未保存原文 · #'+row.id}}</template></el-table-column><el-table-column label="置信度" width="100"><template #default="{row}">{{row.similarity===undefined?'—':Number(row.similarity).toFixed(6)}}</template></el-table-column><el-table-column label="风险" width="80"><template #default="{row}">{{label[row.risk]}}</template></el-table-column></el-table>
      <p class="muted">共 {{m.hit_count}} 条命中，最多显示20条。语义相似度不是概率。</p>
      <h4>策略详情</h4><el-descriptions :column="2" border><el-descriptions-item label="策略组">{{m.policy_name}}</el-descriptions-item><el-descriptions-item label="动作">{{label[m.action]}}</el-descriptions-item><el-descriptions-item label="风险等级">{{label[m.risk]||'按规则风险'}}</el-descriptions-item><el-descriptions-item label="语义阈值">{{m.threshold??'历史未记录'}}</el-descriptions-item><el-descriptions-item label="描述" :span="2">{{m.description||'—'}}</el-descriptions-item></el-descriptions>
     </div>

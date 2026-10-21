@@ -105,6 +105,17 @@ class ComplianceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample_literal_matches([sample],'please review abc company')[0]['matched_text'],'ＡＢＣ Company')
         self.assertEqual(sample_literal_matches([sample],'Company'),[])
 
+    def test_word_modes_validation_and_regex_timeout(self):
+        from app.services.compliance_sources import word_matches,validate_pattern
+        for kind,pattern,value in [('text','ＡＢＣ','abc'),('wildcard','secret?file*','a SECRET-file.txt'),('regex',r'\bsecret\d+\b','SECRET42')]:
+            rule=dict(id=1,kind=kind,pattern=pattern,risk='high')
+            self.assertEqual(len(word_matches([rule],value)),1)
+        with self.assertRaises(APIError) as error:validate_pattern('regex','[')
+        self.assertEqual(error.exception.detail['code'],'COMPLIANCE_PATTERN_INVALID')
+        with self.assertRaises(APIError) as error:
+            word_matches([dict(id=1,kind='regex',pattern='(a|aa)+$',risk='high')],'a'*16000+'!')
+        self.assertEqual(error.exception.detail['code'],'COMPLIANCE_MATCH_TIMEOUT')
+
     async def test_actual_model_policy_blocks_after_route(self):
         db=DB([policy(1,['real'])]);ctx=context()
         await compliance.check(db,ctx)
@@ -166,6 +177,21 @@ class ComplianceTests(unittest.IsolatedAsyncioTestCase):
                   'id':2,'risk':'high','text':'sample','similarity':.99}})):
             with self.assertRaises(APIError): await compliance.check(db,ctx,routed=True)
         embed.assert_awaited_once()
+
+    async def test_word_and_semantic_evidence_share_one_policy_snapshot(self):
+        p=policy(1,['real'],action='audit',samples=[2]);p.word_ids=[1]
+        db=DB([p]);ctx=context('real')
+        @asynccontextmanager
+        async def session(): yield db
+        with patch.object(compliance,'session_factory',session), \
+             patch.object(compliance,'embed',AsyncMock(return_value=[[1,0]])), \
+             patch.object(compliance,'semantic',AsyncMock(return_value={2:{'source':'sample',
+                  'id':2,'risk':'high','text':'sample','similarity':.99}})):
+            await compliance.check(db,ctx)
+        matches=ctx.deferred['compliance']['matches']
+        self.assertEqual(len(matches),1)
+        self.assertEqual(matches[0]['hit_count'],2)
+        self.assertEqual({h['source'] for h in matches[0]['evidence']},{'word','sample'})
 
     async def test_pipeline_blocks_before_provider_and_delivers_log(self):
         db=DB([policy(1,['real'])]);request=context().request

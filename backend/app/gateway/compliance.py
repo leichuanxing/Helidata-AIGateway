@@ -96,7 +96,16 @@ async def check(db,ctx,*,routed=False,model=None):
     if selected:matches.append({'policy_id':p['id'],'policy_name':p['name'],'action':p['action'],'risk':p['risk'],'description':p['description'],'threshold':p['threshold'],'hit_count':len(selected),'evidence':sorted(selected,key=lambda h:-h['similarity'])[:20]})
  previous=ctx.deferred.get('compliance')
  previous=previous if isinstance(previous,dict) else {}
- matches=previous.get('matches',[])+matches
+ # One policy may match words, literal samples and semantic samples in one pass.
+ # Merge before truncating so counts and policy labels remain consistent.
+ merged={}
+ for match in previous.get('matches',[])+matches:
+  ident=match['policy_id']
+  if ident not in merged:merged[ident]=dict(match,evidence=list(match['evidence']))
+  else:
+   saved=merged[ident];saved['hit_count']+=match['hit_count']
+   saved['evidence']=(saved['evidence']+match['evidence'])[:20]
+ matches=list(merged.values())
  action='block' if any(m['action']=='block' for m in matches) else 'audit' if matches else 'pass'
  ctx.deferred['compliance']={'action':action,'matches':matches,'elapsed_ms':round(previous.get('elapsed_ms',0)+(monotonic()-started)*1000,2),'log_delivery':'pending'}
  ctx.deferred['_compliance_policy_ids']=list(dict.fromkeys(ctx.deferred.get('_compliance_policy_ids',[])+[p['id'] for p in policies]))

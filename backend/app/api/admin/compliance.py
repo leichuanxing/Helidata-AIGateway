@@ -4,12 +4,12 @@ from datetime import datetime,timedelta,timezone
 from typing import Literal
 from fastapi import APIRouter,Depends,Query,Request
 from pydantic import BaseModel,ConfigDict,Field,field_validator
-from sqlalchemy import select,func,text
+from sqlalchemy import select,func,text,case
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_session
 from app.core.dependencies import administrator
 from app.core.exceptions import APIError
-from app.models.compliance import AuditWord,AuditSample,CompliancePolicy
+from app.models.compliance import AuditWord,AuditSample,AuditVector,CompliancePolicy
 from app.models.user import UserGroup,LogicalModel
 from app.services.compliance_sources import validate_pattern
 from app.services.vector_service import version
@@ -89,7 +89,11 @@ async def source_list(db,model,page,size,q,status,policy_id,vector_status=''):
  query=select(model)
  if q:query=query.where((model.pattern if model is AuditWord else model.text).icontains(q,autoescape=True))
  if status:query=query.where(model.status==status)
- if vector_status:query=query.where(model.vector_status==vector_status)
+ current=None
+ if model is AuditSample:
+  valid=select(AuditVector.sample_id).where(AuditVector.sample_id==AuditSample.id,AuditVector.sample_revision==AuditSample.revision,AuditVector.model_version==version()).exists()
+  current=case(((AuditSample.vector_status=='ready') & ~valid,'stale'),else_=AuditSample.vector_status)
+  if vector_status:query=query.where(current==vector_status)
  policies=(await db.scalars(select(CompliancePolicy).order_by(CompliancePolicy.id))).all()
  field='word_ids' if model is AuditWord else 'sample_ids'
  if policy_id:
@@ -97,8 +101,11 @@ async def source_list(db,model,page,size,q,status,policy_id,vector_status=''):
   query=query.where(model.id.in_(getattr(chosen,field) if chosen else []))
  total=await db.scalar(select(func.count()).select_from(query.subquery()))
  items=[]
- for r in (await db.scalars(query.order_by(model.id.desc()).offset((page-1)*size).limit(size))).all():
+ records=(await db.scalars(query.order_by(model.id.desc()).offset((page-1)*size).limit(size))).all()
+ states=dict((await db.execute(select(AuditSample.id,current).where(AuditSample.id.in_([r.id for r in records])))).all()) if current is not None and records else {}
+ for r in records:
   item=public(r);item['policies']=[{'id':p.id,'name':p.name,'risk':p.risk,'action':p.action} for p in policies if r.id in getattr(p,field)]
+  if current is not None:item['vector_status']=states[r.id]
   items.append(item)
  return {'data':{'items':items,'total':total,'model_version':version()}}
 @router.get('/words')
@@ -126,7 +133,7 @@ async def edit_word(ident:int,body:WordInput,request:Request,actor=Depends(admin
  if 'policy_id' in body.model_fields_set:await assign(db,r,body.policy_id,'word_ids')
  return await finish(db,r,actor,request,'update_audit_word')
 @router.get('/samples')
-async def samples(actor=Depends(administrator),db=Depends(get_session),page:int=Query(1,ge=1,le=10000),page_size:int=Query(20,ge=1,le=500),q:str=Query('',max_length=256),status:Literal['','pending','processing','ready','failed','not_built']='',enabled:Literal['','enabled','disabled']='',policy_id:int|None=Query(None,gt=0)):
+async def samples(actor=Depends(administrator),db=Depends(get_session),page:int=Query(1,ge=1,le=10000),page_size:int=Query(20,ge=1,le=500),q:str=Query('',max_length=256),status:Literal['','pending','processing','ready','failed','not_built','stale']='',enabled:Literal['','enabled','disabled']='',policy_id:int|None=Query(None,gt=0)):
  return await source_list(db,AuditSample,page,page_size,q,enabled,policy_id,status)
 @router.post('/samples/build')
 async def build_samples(body:BuildInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
@@ -169,11 +176,12 @@ async def retry(ident:int,request:Request,body:dict|None=None,actor=Depends(admi
  return await build_samples(BuildInput(ids=[ident],consent=bool(body and body.get('consent') is True)),request,actor,db)
 @router.get('/policies')
 async def policies(actor=Depends(administrator),db=Depends(get_session),q:str=Query('',max_length=80),status:Literal['','enabled','disabled']=''):
+ from app.services.operations_settings import governance
  query=select(CompliancePolicy)
  if q:query=query.where(CompliancePolicy.name.icontains(q,autoescape=True))
  if status:query=query.where(CompliancePolicy.status==status)
  items=[public(r) for r in (await db.scalars(query.order_by(CompliancePolicy.id))).all()]
- return {'data':{'items':items,'total':len(items)}}
+ return {'data':{'items':items,'total':len(items),'compliance_enabled':governance['compliance_enabled'],'semantic_threshold':governance['semantic_threshold']}}
 async def save_policy(body,request,actor,db,ident=None):
  await lock(db)
  if ident:r=await row(db,CompliancePolicy,ident)
@@ -219,12 +227,13 @@ async def logs(actor=Depends(administrator),db=Depends(get_session),page:int=Que
  if q:
   clauses.append("(l.request_id ILIKE :q OR l.model ILIKE :q OR l.matches::text ILIKE :q)")
   params['q']='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
- if policy_id:clauses.append("EXISTS (SELECT 1 FROM jsonb_array_elements(l.matches) p WHERE p->>'policy_id'=:policy)");params['policy']=str(policy_id)
- if risk or source:
+ if policy_id or risk or source:
   conditions=[]
+  if policy_id:conditions.append("p->>'policy_id'=:policy");params['policy']=str(policy_id)
   if risk:conditions.append("COALESCE(p->>'risk',e->>'risk')=:risk");params['risk']=risk
   if source:conditions.append("e->>'source'=:source");params['source']=source
-  clauses.append("EXISTS (SELECT 1 FROM jsonb_array_elements(l.matches) p CROSS JOIN LATERAL jsonb_array_elements(p->'evidence') e WHERE "+' AND '.join(conditions)+')')
+  evidence=" CROSS JOIN LATERAL jsonb_array_elements(p->'evidence') e" if risk or source else ''
+  clauses.append("EXISTS (SELECT 1 FROM jsonb_array_elements(l.matches) p"+evidence+" WHERE "+' AND '.join(conditions)+')')
  where=' AND '.join(clauses)
  total=await db.scalar(text('SELECT count(*) FROM compliance_logs l WHERE '+where),params);params['offset']=(page-1)*20
  items=[dict(r) for r in (await db.execute(text('SELECT l.* FROM compliance_logs l WHERE '+where+' ORDER BY l.id DESC OFFSET :offset LIMIT 20'),params)).mappings()]

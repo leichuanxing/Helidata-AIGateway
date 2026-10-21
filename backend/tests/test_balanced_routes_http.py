@@ -230,8 +230,10 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                     split_route=await api('POST','admin/balance-routes',{'name':prefix+'-split','model_name':prefix+'-split-route','nodes':[{'mapping_id':split_mapping}],'health_interval':3600},201)
                     split_path='admin/balance-routes/'+str(split_route['id'])
                     split_node=(await api('GET',split_path))['nodes'][0]['id']
+                    before_probe=len(gets)
                     checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
-                    self.assertTrue(checked['success']);self.assertEqual(gets[-1],'/correct/v1/models')
+                    # Background node probes can append other paths concurrently.
+                    self.assertTrue(checked['success']);self.assertIn('/correct/v1/models',gets[before_probe:])
                     self.assertTrue(checked['model_available'])
                     # A reachable models endpoint is not proof that this model exists.
                     await patch_provider(split['id'],{'model_mappings':[{'logical_model':prefix+'-split','upstream_model':'missing-model','model_type':'text'}]})
