@@ -11,8 +11,8 @@ from types import SimpleNamespace
 class ProviderPresetTests(unittest.TestCase):
     def test_image_and_rerank_capabilities_match_adapters_for_every_plan(self):
         from app.providers.operations import compatible
-        expected={'rerank':{'aliyun','siliconflow','vllm','sglang','custom_openai'},
-                  'images':{'openai','zhipu','aliyun','siliconflow','volcengine','gemini','sglang','custom_openai'}}
+        expected={'rerank':{'openai','aliyun','siliconflow','vllm','sglang','ollama','custom_openai'},
+                  'images':{'openai','zhipu','aliyun','siliconflow','volcengine','gemini','sglang','vllm','ollama','custom_openai'}}
         for operation,codes in expected.items():
             wire='openai-rerank' if operation=='rerank' else 'openai-images'
             for code,entry in PROVIDER_TYPES.items():
@@ -36,7 +36,7 @@ class ProviderPresetTests(unittest.TestCase):
         category_mapping(account,mapping)
         category_mapping(SimpleNamespace(protocol_type='vector'),mapping)
         with self.assertRaises(APIError):category_mapping(account,MappingInput(logical_model='embed',upstream_model='embed',model_type='embedding'))
-        for changes in ({'provider_type':'openai'},{'protocol_config':{'openai-embeddings':{}}}):
+        for changes in ({'provider_type':'anthropic'},{'protocol_config':{'openai-embeddings':{}}}):
             with self.assertRaises(APIError):validate_input(ProviderCreate(**{**base,**changes}),True)
 
     def test_every_provider_and_plan_has_valid_address_and_protocols(self):

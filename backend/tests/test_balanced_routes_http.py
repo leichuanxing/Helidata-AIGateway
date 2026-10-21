@@ -186,7 +186,7 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                             r=await client.post(path,json={'model':name+'-route',**payload});self.assertEqual(r.status_code,200,(code,kind,r.text[:300]))
                             await api('DELETE','admin/balance-routes/'+str(route['id']))
                             combinations.append((code,kind))
-                    self.assertEqual(len(combinations),13)
+                    self.assertEqual(len(combinations),17)
                     print('PASS all catalog-enabled vendor/operation combinations, direct and balanced:',combinations)
                     policy=await api('POST','admin/compliance/policies',{'name':prefix,'status':'enabled','action':'block','models':[prefix+'a',prefix+'b']})
                     await api('POST','admin/compliance/words',{'pattern':'blocked','policy_id':policy['id']});start=len(calls);r=await chat(text='blocked')

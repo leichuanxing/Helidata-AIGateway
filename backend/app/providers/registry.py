@@ -64,7 +64,7 @@ def build_adapter(provider,key,operation=None):
     name=select_protocol(provider,operation)
     if name is None:raise ProviderFailure('UNSUPPORTED_OPERATION')
     protocol=NAMES[name];route=configurations(provider)[name]
-    adapter=CustomOpenAIProvider if provider.provider_type in ('custom_openai','vllm','sglang') and protocol=='openai' else ADAPTERS[protocol]
+    adapter=CustomOpenAIProvider if provider.provider_type in ('openai','custom_openai','vllm','sglang','ollama') and protocol=='openai' else ADAPTERS[protocol]
     if protocol=='openai' and provider.provider_type in ('aliyun','siliconflow'):
         from app.providers.vendor_operations import AliyunProvider,SiliconFlowProvider
         adapter=AliyunProvider if provider.provider_type=='aliyun' else SiliconFlowProvider
