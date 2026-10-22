@@ -1,4 +1,5 @@
 """Gateway access policy. Never trust forwarding headers from arbitrary peers."""
+import asyncio,logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from ipaddress import ip_address, ip_network
@@ -10,6 +11,9 @@ from app.core.exceptions import APIError
 from app.core.database import session_factory
 from app.core.redis import redis_client
 from app.core.config import get_settings
+from redis.exceptions import RedisError
+
+logger=logging.getLogger(__name__)
 
 policy = SecurityPolicy()
 
@@ -81,11 +85,18 @@ async def load():
 
 async def event(request, action, key_id=None, actor_id=None):
     # Store only safe metadata, never credentials, prompts or request headers.
-    async with session_factory() as db:
-        db.add(AuditLog(actor_id=actor_id, action=action, resource_type='gateway_security',
-            resource_id=str(key_id) if key_id else None, client_ip=request.client.host if request.client else None,
-            result='failure', details={'request_id':getattr(request.state,'request_id',None)}))
-        await db.commit()
+    try:
+        async with asyncio.timeout(2):
+            async with session_factory() as db:
+                db.add(AuditLog(actor_id=actor_id, action=action, resource_type='gateway_security',
+                    resource_id=str(key_id) if key_id else None, client_ip=request.client.host if request.client else None,
+                    result='failure', details={'request_id':getattr(request.state,'request_id',None)}))
+                await db.commit()
+    except Exception:
+        # A logging outage must never change a deny into a generic server error.
+        # Preserve safe evidence in the server log; never log headers or credentials.
+        logger.error('Security audit fallback action=%s ip=%s key_id=%s request_id=%s',action,
+            request.client.host if request.client else None,key_id,getattr(request.state,'request_id',None))
 
 RATE_SCRIPT = """local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end; return {n,redis.call('TTL',KEYS[1])}"""
 async def rate(request, kind, identifier, limit):
@@ -94,7 +105,9 @@ async def rate(request, kind, identifier, limit):
     if getattr(request.state, marker, False): return
     setattr(request.state, marker, True)
     key = 'gateway:security:rpm:' + kind + ':' + sha256(str(identifier).encode()).hexdigest()
-    count, ttl = await redis_client.eval(RATE_SCRIPT, 1, key)
+    try:count, ttl = await redis_client.eval(RATE_SCRIPT, 1, key)
+    except RedisError:
+        raise APIError(503,'SECURITY_RATE_UNAVAILABLE','安全限流服务暂不可用，请稍后重试') from None
     if int(count) > limit:
         await event(request, 'RATE_LIMITED', identifier if kind == 'key' else None)
         error = APIError(429,'GATEWAY_RATE_LIMITED','请求频率超过每分钟上限')
@@ -108,7 +121,7 @@ async def enforce(request):
     if hasattr(request,'_client'): del request._client
     path = request.scope['path']
     if path in ('/health','/api/health'): return
-    category = 'admin' if path.startswith(('/api/admin/','/api/auth/','/admin/','/internal/gateway-security/')) or path == '/login' else 'api' if path.startswith('/v1/') else 'global'
+    category = 'admin' if path.startswith(('/api/admin/','/api/auth/','/admin/','/internal/gateway-security/')) or path in ('/login','/admin','/api/admin') else 'api' if path.startswith('/v1/') else 'global'
     code = rejection(ip, category)
     if code:
         await event(request, code)

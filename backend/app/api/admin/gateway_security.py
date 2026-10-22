@@ -30,7 +30,7 @@ async def save(body:SecurityPolicy, request:Request, actor=Depends(super_adminis
     row = await db.get(SystemSetting,'gateway_security',with_for_update=True)
     current = SecurityPolicy.model_validate(row.value) if row else SecurityPolicy()
     if current.revision != body.revision: raise APIError(409,'SECURITY_CHANGED','配置已更新，请重新加载后再保存')
-    security.prevent_lockout(request, body)
+    current_ip=security.prevent_lockout(request, body)
     ids = [item.key_id for item in body.key_bindings]
     if ids:
         actual = set((await db.scalars(select(ApiKey.id).where(ApiKey.id.in_(ids),ApiKey.deleted_at.is_(None),ApiKey.status!='deleted'))).all())
@@ -53,7 +53,7 @@ async def save(body:SecurityPolicy, request:Request, actor=Depends(super_adminis
     await db.commit()
     security.policy=value
     operations.apply(settings)
-    return {'data':{'policy':value.model_dump(mode='json'),'current_ip':request.client.host}}
+    return {'data':{'policy':value.model_dump(mode='json'),'current_ip':current_ip}}
 
 @router.patch('/api/admin/gateway-security')
 async def save_section(body:SecuritySectionPatch,request:Request,actor=Depends(super_administrator),db=Depends(get_session)):
@@ -102,10 +102,13 @@ async def logs(actor=Depends(super_administrator),db=Depends(get_session),ip:str
     if start.tzinfo is None or end.tzinfo is None or start>=end or end-start>timedelta(days=31):
         raise APIError(422,'SECURITY_LOG_RANGE_INVALID','查询须包含时区且范围大于0、不超过31天')
     conditions=[AuditLog.resource_type=='gateway_security']
-    if ip: conditions.append(AuditLog.client_ip==ip)
+    if ip:
+        try:ip=str(security.address(ip.strip()))
+        except ValueError:raise APIError(422,'INVALID_IP','安全日志筛选须填写单个有效 IP 地址') from None
+        conditions.append(AuditLog.client_ip==ip)
     if event: conditions.append(AuditLog.action==event)
     if start: conditions.append(AuditLog.created_at>=start)
-    if end: conditions.append(AuditLog.created_at<=end)
+    if end: conditions.append(AuditLog.created_at<end)
     total=await db.scalar(select(func.count()).select_from(AuditLog).where(*conditions))
     rows=(await db.scalars(select(AuditLog).where(*conditions).order_by(AuditLog.id.desc()).offset((page-1)*size).limit(size))).all()
     return {'data':{'total':total,'items':[{'id':r.id,'event':r.action,'ip':r.client_ip,'key_id':r.resource_id,'created_at':r.created_at,'request_id':r.details.get('request_id')} for r in rows]}}

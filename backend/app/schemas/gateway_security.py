@@ -1,9 +1,12 @@
 from datetime import datetime
 from typing import Literal
 from ipaddress import ip_network
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-class AccessRule(BaseModel):
+class SecurityInput(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+
+class AccessRule(SecurityInput):
     enabled: bool = False
     mode: Literal['blacklist','whitelist'] = 'blacklist'
     addresses: list[str] = Field(default_factory=list, max_length=500)
@@ -15,6 +18,8 @@ class AccessRule(BaseModel):
         for value in values:
             try:
                 network = ip_network(value.strip(), strict=False)
+                if network.version==6 and network.prefixlen>=96 and network.network_address.ipv4_mapped is not None:
+                    network=ip_network(f'{network.network_address.ipv4_mapped}/{network.prefixlen-96}')
             except ValueError:
                 raise ValueError('请输入有效 IP 或 CIDR 网段') from None
             if str(network) not in result: result.append(str(network))
@@ -26,12 +31,12 @@ class AccessRule(BaseModel):
             raise ValueError('启用白名单前请添加允许访问的 IP 或网段')
         return self
 
-class KeyBinding(BaseModel):
-    key_id: int = Field(gt=0)
+class KeyBinding(SecurityInput):
+    key_id: int = Field(gt=0,strict=True)
     addresses: list[str] = Field(min_length=1, max_length=100)
     _networks = field_validator('addresses')(AccessRule.networks.__func__)
 
-class Ban(BaseModel):
+class Ban(SecurityInput):
     address: str
     expires_at: datetime | None = None
     reason: str = Field(default='', max_length=200)
@@ -45,7 +50,7 @@ class Ban(BaseModel):
         if value is not None and value.tzinfo is None: raise ValueError('封禁到期时间必须包含时区')
         return value
 
-class SecurityPolicy(BaseModel):
+class SecurityPolicy(SecurityInput):
     revision: int = Field(default=0, ge=0)
     global_access: AccessRule = Field(default_factory=AccessRule)
     admin_access: AccessRule = Field(default_factory=AccessRule)
@@ -62,15 +67,17 @@ class SecurityPolicy(BaseModel):
     def unique_bindings(self):
         if len({binding.key_id for binding in self.key_bindings}) != len(self.key_bindings):
             raise ValueError('同一个 API Key 只能配置一组 IP 绑定')
+        if len({ban.address for ban in self.bans})!=len(self.bans):
+            raise ValueError('同一地址只能配置一条封禁记录，请编辑已有记录')
         if any(ip_network(value).prefixlen == 0 for value in self.trusted_proxies):
             raise ValueError('可信代理不能使用全网网段')
         return self
 
-class SecuritySectionPatch(BaseModel):
+class SecuritySectionPatch(SecurityInput):
     revision: int = Field(ge=0)
     section: Literal['global_access','admin_access','api_access','rate','login','bans','proxies']
     values: dict
 
-class AddressValidation(BaseModel):
+class AddressValidation(SecurityInput):
     addresses: list[str] = Field(min_length=1,max_length=500)
     purpose: Literal['addresses','proxies'] = 'addresses'

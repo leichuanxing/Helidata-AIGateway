@@ -23,6 +23,15 @@ class PolicyTests(unittest.TestCase):
     def test_ipv6_and_mapped_peer(self):
         self.assertTrue(security.matches('2001:db8::5',['2001:db8::/32']))
         self.assertTrue(security.matches('::ffff:192.0.2.5',['192.0.2.0/24']))
+    def test_mapped_network_rules_are_normalized_like_clients(self):
+        cfg=SecurityPolicy(bans=[Ban(address='::ffff:192.0.2.0/120')])
+        self.assertEqual(cfg.bans[0].address,'192.0.2.0/24')
+        self.assertEqual(security.rejection('::ffff:192.0.2.5','api',cfg),'IP_BANNED')
+        with self.assertRaises(ValidationError):SecurityPolicy(trusted_proxies=['::ffff:0.0.0.0/96'])
+    def test_unknown_security_fields_and_duplicate_bans_rejected(self):
+        with self.assertRaises(ValidationError):AccessRule(enabled=True,allow_ips=['192.0.2.1'])
+        with self.assertRaises(ValidationError):SecurityPolicy(bans=[Ban(address='192.0.2.1'),Ban(address='192.0.2.1/32')])
+        with self.assertRaises(ValidationError):KeyBinding(key_id=True,addresses=['192.0.2.1'])
     def test_untrusted_forward_headers_ignored(self):
         self.assertEqual(security.resolve_ip('192.0.2.5','127.0.0.1','127.0.0.1',[]),'192.0.2.5')
     def test_proxy_chain_stops_at_untrusted_hop(self):
@@ -89,6 +98,22 @@ class EnforcementTests(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_rate_never_contacts_redis(self):
         with patch.object(security.redis_client,'eval',AsyncMock()) as redis:
             await security.rate(request(),'ip','192.0.2.10',0);redis.assert_not_called()
+    async def test_unavailable_redis_returns_explicit_fail_closed_response(self):
+        from redis.exceptions import ConnectionError
+        with patch.object(security.redis_client,'eval',AsyncMock(side_effect=ConnectionError('private detail'))):
+            with self.assertRaises(APIError) as caught:await security.rate(request(),'ip','192.0.2.10',2)
+        self.assertEqual(caught.exception.status_code,503)
+        self.assertEqual(caught.exception.detail['code'],'SECURITY_RATE_UNAVAILABLE')
+        self.assertNotIn('private detail',str(caught.exception.detail))
+    async def test_failed_audit_does_not_replace_ip_denial(self):
+        from contextlib import asynccontextmanager
+        @asynccontextmanager
+        async def unavailable():raise RuntimeError('private database detail');yield
+        cfg=SecurityPolicy(admin_access=AccessRule(enabled=True,addresses=['192.0.2.0/24']))
+        with patch.object(security,'policy',cfg),patch.object(security,'session_factory',unavailable),self.assertLogs(security.logger,level='ERROR') as logs:
+            with self.assertRaises(APIError) as caught:await security.enforce(request('/admin'))
+        self.assertEqual(caught.exception.status_code,403)
+        self.assertIn('BLACKLIST_HIT',logs.output[0]);self.assertNotIn('private database detail',logs.output[0])
 
 class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_backend_admin_and_static_guard_both_deny(self):
