@@ -1,5 +1,7 @@
 """Read-only runtime metrics; no credentials or external model requests."""
 import asyncio
+import anyio
+from contextlib import suppress
 import os
 from pathlib import Path
 import shutil
@@ -89,10 +91,11 @@ async def _processes():
                 result[parts[0]] = parts[1]
         return {**_observed_processes(), **{k: v for k, v in result.items() if k in ('nginx', 'uvicorn', 'postgresql', 'redis')}}
     except (OSError, asyncio.TimeoutError):
-        if process and process.returncode is None:
-            process.kill()
-            await process.wait()
         return _observed_processes()
+    finally:
+        if process and process.returncode is None:
+            with suppress(ProcessLookupError):process.kill()
+            with anyio.CancelScope(shield=True):await process.wait()
 
 
 def _observed_processes():
@@ -125,16 +128,20 @@ async def snapshot():
         first = _cpu_ticks()
         checks_task = asyncio.create_task(asyncio.wait_for(dependencies(), 5))
         processes_task = asyncio.create_task(_processes())
-        await asyncio.sleep(.2)
-        last = _cpu_ticks()
-        cpu_percent = None
-        if first and last and last[0] > first[0]:
-            cpu_percent = round(max(0, min(100, 100 * (1 - (last[1] - first[1]) / (last[0] - first[0])))), 1)
         try:
-            checks = await checks_task
-        except Exception:
-            checks = {'fastapi': 'ok', 'postgresql': 'unknown', 'redis': 'unknown', 'disk': 'unknown'}
-        processes = await processes_task
+            await asyncio.sleep(.2)
+            last = _cpu_ticks()
+            cpu_percent = None
+            if first and last and last[0] > first[0]:
+                cpu_percent = round(max(0, min(100, 100 * (1 - (last[1] - first[1]) / (last[0] - first[0])))), 1)
+            try:checks = await checks_task
+            except Exception:checks = {'fastapi': 'ok', 'postgresql': 'unknown', 'redis': 'unknown', 'disk': 'unknown'}
+            processes = await processes_task
+        finally:
+            for task in (checks_task,processes_task):
+                if not task.done():task.cancel()
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(checks_task,processes_task,return_exceptions=True)
         components = []
         for key, label, process_name in [('nginx', 'Web 服务', 'nginx'), ('fastapi', 'API 服务', 'uvicorn'),
                                          ('postgresql', 'PostgreSQL', 'postgresql'), ('redis', 'Redis', 'redis')]:

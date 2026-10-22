@@ -139,4 +139,7 @@ async def vector_test(body:VectorTest,request:Request,actor=Depends(super_admini
     from app.services.admin_embedding import embedding
     audit(db,actor.id,'test_vector_service','operations',request.client.host,resource_type='system_settings');await db.commit()
     vector,request_id=await embedding(actor.id,current['vector']['model'],'test',request.client.host)
+    latest=await operations.document(db,include_assets=False)
+    if latest['revision']!=current['revision'] or latest['vector']!=current['vector']:
+        raise APIError(409,'VECTOR_CONFIG_CHANGED','测试期间向量配置已变化，请重新测试；已发生的调用仍计入日志')
     return {'data':{'dimensions':len(vector),'request_id':request_id,'success':True}}

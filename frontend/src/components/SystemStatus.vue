@@ -19,7 +19,7 @@ onBeforeUnmount(stop)
 <template>
 <div class="status-heading"><div><h2>系统状态</h2><p class="muted">查看当前资源占用和组件检查结果。</p></div><div class="status-actions"><el-checkbox v-model="auto">15 秒刷新</el-checkbox><el-button :loading="loading" @click="refresh">刷新状态</el-button></div></div>
 <el-alert v-if="error" :title="error" :description="snapshot?'以下为上次成功采集的数据，请以采集时间为准。':''" type="error" :closable="false"/>
-<div v-if="snapshot" v-loading="loading">
+<div v-if="snapshot">
 <p class="muted status-stamp">采集时间 {{formatDate(snapshot.checked_at)}} · API 进程运行 {{uptime}}</p>
 <div class="resource-grid">
 <el-card shadow="never"><h3>CPU 使用率</h3><strong class="resource-number">{{snapshot.cpu.percent==null?'—':snapshot.cpu.percent+'%'}}</strong><el-progress v-if="snapshot.cpu.percent!=null" :percentage="snapshot.cpu.percent" :show-text="false"/><p class="muted">宿主机 {{snapshot.cpu.cores??'—'}} 核 · 瞬时采样</p><p class="muted">1 / 5 / 15 分钟负载：{{snapshot.cpu.load?.join(' / ')??'无法读取'}}</p><p class="muted">容器 CPU 限额：{{snapshot.cpu.container_limit_cores==null?'未设置':snapshot.cpu.container_limit_cores+' 核'}}</p></el-card>

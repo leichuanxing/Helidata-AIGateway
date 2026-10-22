@@ -32,10 +32,18 @@ def headers(cfg):
 
 async def request(cfg,method,path,**kwargs):
     async with httpx.AsyncClient(timeout=10,follow_redirects=False,trust_env=False) as client:
-        response=await client.request(method,cfg['url'].rstrip('/')+path,headers=headers(cfg),**kwargs)
-        if response.status_code>=300:raise APIError(502,'ES_CONNECTION_FAILED','Elasticsearch 连接或认证失败')
-        if len(response.content)>1024*1024:raise APIError(502,'ES_RESPONSE_INVALID','Elasticsearch 响应过大')
-        return response.json()
+        async with client.stream(method,cfg['url'].rstrip('/')+path,headers={**headers(cfg),'Accept-Encoding':'identity'},**kwargs) as response:
+            if response.status_code>=300:raise APIError(502,'ES_CONNECTION_FAILED','Elasticsearch 连接或认证失败')
+            if response.headers.get('content-encoding','identity').lower() not in ('','identity'):
+                raise APIError(502,'ES_RESPONSE_INVALID','Elasticsearch 返回了不支持的压缩响应')
+            raw=bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=65536):
+                if len(raw)+len(chunk)>1024*1024:raise APIError(502,'ES_RESPONSE_INVALID','Elasticsearch 响应过大')
+                raw.extend(chunk)
+        try:data=json.loads(raw)
+        except (ValueError,UnicodeDecodeError):raise APIError(502,'ES_RESPONSE_INVALID','Elasticsearch 响应格式无效') from None
+        if not isinstance(data,dict):raise APIError(502,'ES_RESPONSE_INVALID','Elasticsearch 响应格式无效')
+        return data
 
 async def test_connection():
     cfg=dict(settings.elasticsearch)
@@ -44,6 +52,7 @@ async def test_connection():
         data=await request(cfg,'GET','/')
         version=str(data.get('version',{}).get('number',''))
         if not version.startswith('9.'):raise APIError(400,'ES_VERSION_UNSUPPORTED','仅支持 Elasticsearch 9.x')
+        if cfg!=settings.elasticsearch:raise APIError(409,'ES_CONFIG_CHANGED','测试期间 Elasticsearch 配置已变化，请重新测试')
         return {'success':True,'version':version}
     except APIError:raise
     except Exception:raise APIError(502,'ES_CONNECTION_FAILED','Elasticsearch 连接失败，请检查服务地址与证书') from None

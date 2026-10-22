@@ -3,7 +3,7 @@ import base64, struct
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Literal
-from pydantic import BaseModel,ConfigDict,Field,field_validator
+from pydantic import BaseModel,ConfigDict,Field,field_validator,model_validator
 import regex
 
 
@@ -19,6 +19,14 @@ class Basic(Section):
     public_api_base_url:str=Field(default='',max_length=2048)
     language:Literal['zh-CN']='zh-CN'
     timezone:str=Field(default='Asia/Shanghai',max_length=80)
+
+    @field_validator('system_name')
+    @classmethod
+    def name(cls,value):
+        value=value.strip()
+        if not value or any(ord(c)<32 or ord(c)==127 for c in value):
+            raise ValueError('系统名称不能为空或包含控制字符')
+        return value
 
     @field_validator('timezone')
     @classmethod
@@ -37,6 +45,12 @@ class Basic(Section):
         if parsed.port is not None and not 1<=parsed.port<=65535:raise ValueError('Invalid port')
         return value.rstrip('/')
 
+    @field_validator('public_api_base_url')
+    @classmethod
+    def api_base(cls,value):
+        if value and not value.endswith('/v1'):raise ValueError('接入地址须以 /v1 结尾')
+        return value
+
     @field_validator('logo','icon')
     @classmethod
     def image(cls,value):
@@ -53,30 +67,30 @@ class Basic(Section):
 
 class GatewayOptions(Section):
     protocol_conversion:bool=True
-    max_concurrency:int=Field(default=500,ge=1,le=100000)
-    queue_size:int=Field(default=1000,ge=0,le=100000)
-    queue_timeout:int=Field(default=30,ge=1,le=3600)
-    nonstream_timeout:int=Field(default=120,ge=1,le=600)
-    stream_idle_timeout:int=Field(default=300,ge=1,le=3600)
-    max_body_bytes:int=Field(default=10485760,ge=1024,le=10485760)
-    sticky_timeout:int=Field(default=1800,ge=1,le=86400)
-    health_check_interval:int=Field(default=0,ge=0,le=86400)
-    failure_threshold:int=Field(default=2,ge=1,le=100)
-    cooldown_seconds:int=Field(default=30,ge=1,le=3600)
+    max_concurrency:int=Field(default=500,ge=1,le=100000,strict=True)
+    queue_size:int=Field(default=1000,ge=0,le=100000,strict=True)
+    queue_timeout:int=Field(default=30,ge=1,le=3600,strict=True)
+    nonstream_timeout:int=Field(default=120,ge=1,le=600,strict=True)
+    stream_idle_timeout:int=Field(default=300,ge=1,le=3600,strict=True)
+    max_body_bytes:int=Field(default=10485760,ge=1024,le=10485760,strict=True)
+    sticky_timeout:int=Field(default=1800,ge=1,le=86400,strict=True)
+    health_check_interval:int=Field(default=0,ge=0,le=86400,strict=True)
+    failure_threshold:int=Field(default=2,ge=1,le=100,strict=True)
+    cooldown_seconds:int=Field(default=30,ge=1,le=3600,strict=True)
 
 
 class SecurityOptions(Section):
-    jwt_expire:int=Field(default=7200,ge=60,le=86400)
-    refresh_days:int=Field(default=14,ge=1,le=90)
-    login_max_attempts:int=Field(default=5,ge=1,le=50)
-    login_lock_seconds:int=Field(default=900,ge=30,le=86400)
+    jwt_expire:int=Field(default=7200,ge=60,le=86400,strict=True)
+    refresh_days:int=Field(default=14,ge=1,le=90,strict=True)
+    login_max_attempts:int=Field(default=5,ge=1,le=50,strict=True)
+    login_lock_seconds:int=Field(default=900,ge=30,le=86400,strict=True)
     cookie_secure:bool=False
 
 
 class LogOptions(Section):
     save_request_body:bool=False
     save_response_body:bool=False
-    retention_days:int=Field(default=366,ge=1,le=3650)
+    retention_days:int=Field(default=366,ge=1,le=3650,strict=True)
     redaction_rules:list[str]=Field(default_factory=list,max_length=20)
 
     @field_validator('redaction_rules')
@@ -90,7 +104,7 @@ class LogOptions(Section):
 
 
 class VectorOptions(Section):
-    provider_id:int|None=Field(default=None,gt=0)
+    provider_id:int|None=Field(default=None,gt=0,strict=True)
     model:str=Field(default='',max_length=100)
 
 class GovernanceOptions(Section):
@@ -104,16 +118,16 @@ class ElasticsearchOptions(Section):
     auth_type:Literal['api_key','basic']='api_key'
     username:str=Field(default='',max_length=200)
     secret:str=Field(default='',max_length=4096)
-    request_body_kib:int=Field(default=0,ge=0,le=16)
-    response_body_kib:int=Field(default=0,ge=0,le=16)
-    retention_days:int=Field(default=30,ge=1,le=365)
+    request_body_kib:int=Field(default=0,ge=0,le=16,strict=True)
+    response_body_kib:int=Field(default=0,ge=0,le=16,strict=True)
+    retention_days:int=Field(default=30,ge=1,le=365,strict=True)
 
     @field_validator('url')
     @classmethod
     def endpoint(cls,value):return Basic.url(value)
 
 class SettingsPatch(Section):
-    revision:int=Field(ge=0)
+    revision:int=Field(ge=0,strict=True)
     basic:Basic|None=None
     gateway:GatewayOptions|None=None
     security:SecurityOptions|None=None
@@ -121,3 +135,10 @@ class SettingsPatch(Section):
     vector:VectorOptions|None=None
     governance:GovernanceOptions|None=None
     elasticsearch:ElasticsearchOptions|None=None
+
+    @model_validator(mode='after')
+    def nonempty(self):
+        sections=[getattr(self,k) for k in self.model_fields_set if k!='revision']
+        if not any(section is not None and section.model_fields_set for section in sections):
+            raise ValueError('请提供需要保存的配置字段')
+        return self
