@@ -1,6 +1,15 @@
 from sqlalchemy import text
 from app.services.usage import source_query
 
+async def provider_metrics(db,start,end,grain,ids):
+    if not ids:return {}
+    cte,params=source_query(start,end,grain,{})
+    params['provider_ids']=list(ids)
+    rows=(await db.execute(text(cte+'''SELECT provider_id,sum(requests) AS requests,
+        sum(failure) AS failure FROM filtered WHERE provider_id=ANY(:provider_ids)
+        GROUP BY provider_id'''),params)).mappings().all()
+    return {r['provider_id']:{'requests':int(r['requests']),'failure':int(r['failure'])} for r in rows}
+
 async def rankings(db,start,end,grain):
     cte,params=source_query(start,end,grain,{})
     sql=cte+", dimensions AS (SELECT 'provider'::text AS kind,provider_id::text AS dimension,total_tokens_sum,total_tokens_count,requests,failure FROM filtered UNION ALL SELECT 'model',coalesce(nullif(logical_model,''),nullif(request_model,''),''),total_tokens_sum,total_tokens_count,requests,failure FROM filtered), summed AS (SELECT kind,dimension,sum(total_tokens_sum) AS tokens,sum(total_tokens_count) AS token_samples,sum(requests) AS requests,sum(failure) AS failure FROM dimensions GROUP BY kind,dimension), ordered AS (SELECT *,row_number() OVER (PARTITION BY kind ORDER BY tokens DESC,requests DESC,dimension) AS position FROM summed) SELECT kind,CASE WHEN position<=10 THEN dimension ELSE NULL END AS dimension,sum(tokens) AS tokens,sum(token_samples) AS token_samples,sum(requests) AS requests,sum(failure) AS failure,min(position) AS position FROM ordered GROUP BY kind,CASE WHEN position<=10 THEN dimension ELSE NULL END ORDER BY kind,min(position)"

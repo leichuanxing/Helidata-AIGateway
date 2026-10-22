@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.models.user import Provider,UserGroup
 from app.gateway.provider_health import state
 from app.services.usage import statistics,ZONE
-from app.services.dashboard import rankings
+from app.services.dashboard import rankings,provider_metrics
 from app.services import dashboard_live
 from app.services.group_access import concurrency_limits
 router=APIRouter(prefix='/api/admin/dashboard',tags=['Dashboard'])
@@ -29,6 +29,7 @@ async def dashboard(period:Literal['1h','24h','7d','30d']='24h',actor=Depends(ad
         groups=(await db.scalars(select(UserGroup).order_by(UserGroup.id).limit(100))).all()
         provider_total=await db.scalar(select(func.count()).select_from(Provider).where(Provider.deleted_at.is_(None)))
         group_total=await db.scalar(select(func.count()).select_from(UserGroup))
+        provider_usage=await provider_metrics(db,start,end,grain,[p.id for p in providers])
         ids=[int(r['dimension']) for r in rank['provider'] if r['dimension'] and r['dimension']!='0']
         names=dict((await db.execute(select(Provider.id,Provider.name).where(Provider.id.in_(ids),Provider.deleted_at.is_(None)))).all()) if ids else {}
     for row in rank['provider']:
@@ -50,6 +51,7 @@ async def dashboard(period:Literal['1h','24h','7d','30d']='24h',actor=Depends(ad
         'summary':usage['summary'],'today':today_usage['summary'],'today_start':today,'series':usage['series'],
         'rankings':rank,'live':live,'concurrency_series':history,'concurrency_grain':history_grain,'history_available':history_available,
         'concurrency_note':'每10秒采样，按分钟记录峰值，保留31天；图表展示时段内已采样峰值，空缺表示未采集。',
-        'providers':[{'id':p.id,'name':p.name,'status':p.status,'health_status':p.health_status,'scheduling_state':state(p),'current_concurrency':counts.get(f'provider:{p.id}:concurrency'),'max_concurrency':p.max_concurrency} for p in providers],
+        'providers':[{'id':p.id,'name':p.name,'status':p.status,'health_status':p.health_status,'scheduling_state':state(p),'current_concurrency':counts.get(f'provider:{p.id}:concurrency'),'max_concurrency':p.max_concurrency,
+            'last_latency_ms':p.last_latency_ms,'requests':provider_usage.get(p.id,{}).get('requests',0),'failure':provider_usage.get(p.id,{}).get('failure',0)} for p in providers],
         'groups':[{'id':g.id,'name':g.name,'status':g.status,'current_concurrency':counts.get(f'group:{g.id}:concurrency'),'max_concurrency':concurrency_limits(g,cfg.max_concurrency)[0]} for g in groups],
         'provider_total':provider_total,'group_total':group_total,'resource_limit':100}}
