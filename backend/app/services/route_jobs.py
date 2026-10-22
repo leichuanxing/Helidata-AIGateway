@@ -33,8 +33,8 @@ return 1
 
 
 def embedding_value(result):
-    data=result.get('data')
-    if not isinstance(data,list) or len(data)!=1 or type(data[0].get('index')) is not int or data[0]['index']!=0:
+    data=result.get('data') if isinstance(result,dict) else None
+    if not isinstance(data,list) or len(data)!=1 or not isinstance(data[0],dict) or type(data[0].get('index')) is not int or data[0]['index']!=0:
         raise APIError(502,'ROUTE_INVALID_VECTOR','Embedding必须返回索引0的单条向量')
     vector=data[0].get('embedding');encode_vector(vector);return vector
 

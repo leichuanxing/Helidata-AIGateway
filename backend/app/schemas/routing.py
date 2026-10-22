@@ -1,6 +1,7 @@
 """Bounded administrator inputs for the Stage16 management layer."""
 import csv
 import io
+from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.core.exceptions import APIError
@@ -19,6 +20,14 @@ class RouteConfigInput(BaseModel):
     confidence_gap: float = Field(default=.1, ge=0, le=1, strict=True)
     fallback: Literal['error', 'simple', 'complex'] = 'error'
     status: Literal['enabled', 'disabled'] = 'disabled'
+    expected_updated_at: datetime | None = None
+
+    @field_validator('expected_updated_at')
+    @classmethod
+    def aware_version(cls,value):
+        if value is not None and value.tzinfo is None:
+            raise ValueError('规则版本时间必须包含时区')
+        return value
 
     @model_validator(mode='after')
     def distinct_targets(self):

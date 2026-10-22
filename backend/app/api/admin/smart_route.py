@@ -27,7 +27,7 @@ def public(row):
 
 async def config(db,ident,lock=False):
     query=select(RouteConfig).where(RouteConfig.id==ident)
-    row=await db.scalar(query.with_for_update() if lock else query)
+    row=await db.scalar(query.with_for_update().execution_options(populate_existing=True) if lock else query)
     if not row:raise APIError(404,'ROUTE_NOT_FOUND','路由规则不存在')
     return row
 
@@ -58,6 +58,8 @@ async def save(body,request,actor,db,row=None):
     await config_lock(db)
     if row:
         row=await config(db,row.id,True)
+        if body.expected_updated_at is not None and body.expected_updated_at!=row.updated_at:
+            raise APIError(409,'ROUTE_CHANGED','路由规则已被修改，请重新加载后再保存')
         if body.virtual_model!=row.virtual_model:raise APIError(409,'ROUTE_NAME_IMMUTABLE','虚拟模型名称不可修改，请新建规则')
     elif await db.get(LogicalModel,body.virtual_model):
         raise APIError(409,'ROUTE_NAME_CONFLICT','虚拟模型名称已被逻辑模型或路由占用')
@@ -72,10 +74,10 @@ async def save(body,request,actor,db,row=None):
         if await db.scalar(select(func.count()).select_from(RouteConfig))>=100:
             raise APIError(400,'ROUTE_CONFIG_LIMIT','最多配置100条路由规则')
         db.add(LogicalModel(name=body.virtual_model,model_type='text'));await db.flush()
-        row=RouteConfig(**body.model_dump());db.add(row);action='create_route'
+        row=RouteConfig(**body.model_dump(exclude={'expected_updated_at'}));db.add(row);action='create_route'
     else:
         changed=row.embedding_model!=body.embedding_model
-        for name,value in body.model_dump().items():setattr(row,name,value)
+        for name,value in body.model_dump(exclude={'expected_updated_at'}).items():setattr(row,name,value)
         if changed:
             row.vector_generation+=1
             await db.execute(update(RouteSample).where(RouteSample.config_id==row.id).values(vector_status='stale',vector_requested=False,vector_error=None,
@@ -105,7 +107,6 @@ class PreviewInput(BaseModel):
 async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
     from app.services.admin_embedding import embedding
     from app.services.route_vectors import nearest,classify,exact_match,normalize_prompt
-    from app.core.database import session_factory
     from app.gateway.request_id import generate
     import anyio
     cfg=await config(db,ident);started=monotonic()
@@ -145,8 +146,8 @@ async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(admi
     finally:
         if db.in_transaction():db.expunge_all();await db.rollback()
         with anyio.CancelScope(shield=True):
-            async with session_factory.begin() as history:
-                history.add(RouteDecision(request_id=request.state.request_id,config_id=ident,virtual_model=virtual_model,
+            from app.services.route_decisions import write
+            await write(dict(request_id=request.state.request_id,config_id=ident,virtual_model=virtual_model,
                     embedding_request_id=embedding_id,top_k=snapshot['top_k'],source=source,request_kind='preview',normalized_text=text,
                     classification=classification,similarity=choice.similarity if choice else None,confidence=choice.confidence if choice else None,
                     selected_model_group=group_id,selected_group_name=group_name,selected_model=models[0] if models else None,
@@ -350,7 +351,7 @@ async def statistics(actor=Depends(administrator),db=Depends(get_session),start:
     if virtual_model:filters.append(RouteDecision.virtual_model==virtual_model)
     def joined(statement):
         return statement.select_from(RouteDecision).outerjoin(CallLog,CallLog.request_id==RouteDecision.request_id).where(*filters)
-    failed=or_(RouteDecision.status=='failed',CallLog.status=='failure')
+    failed=or_(RouteDecision.status=='failed',CallLog.status.in_(('failure','client_cancelled')))
     def metrics():return [func.count().label('decisions'),func.count().filter(RouteDecision.request_kind=='real').label('real_requests'),
         func.count().filter(RouteDecision.request_kind=='preview').label('previews'),func.count().filter(failed).label('failures'),
         func.count(CallLog.total_tokens).label('usage_count'),func.sum(CallLog.total_tokens).label('total_tokens'),
@@ -369,4 +370,4 @@ async def statistics(actor=Depends(administrator),db=Depends(get_session),start:
         'model':await distribution(func.coalesce(CallLog.logical_model,RouteDecision.selected_model)),'tokens':await distribution(token_band)}
     return {'data':{'start':start,'end':end,'items':[dict(row) for row in rows],'summary':dict(overview),
         'distributions':distributions,'token_scope':'仅父推理请求；Embedding子调用在独立用量中统计',
-        'metric_scope':'真实请求与预览分别计数；失败包含决策失败或实际调用失败（不重复）；Token仅统计父推理已上报用量；累计耗时为决策耗时'}}
+        'metric_scope':'真实请求与预览分别计数；失败包含决策失败、实际调用失败或客户端取消（不重复）；Token仅统计父推理已上报用量；累计耗时为决策耗时'}}

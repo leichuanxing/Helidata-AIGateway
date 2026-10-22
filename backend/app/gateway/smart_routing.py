@@ -5,7 +5,7 @@ from starlette.requests import Request
 from sqlalchemy import select
 from app.core.database import session_factory
 from app.core.exceptions import APIError
-from app.models.routing import RouteConfig,RouteDecision
+from app.models.routing import RouteConfig
 from app.models.user import ModelGroupModel
 from app.services.model_catalog import allowed_groups
 from app.services.route_vectors import nearest,classify,exact_match,normalize_prompt
@@ -27,6 +27,8 @@ def prompt(ctx):
     body=ctx.payload or {};items=body.get('input') if ctx.operation=='responses' else body.get('messages')
     if isinstance(items,str):result=items
     else:
+        if not isinstance(items,list):
+            raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能路由需要文本用户输入')
         texts=[]
         for item in items or []:
             if not isinstance(item,dict):raise APIError(400,'ROUTE_PROMPT_UNSUPPORTED','智能路由需要文本用户输入')
@@ -104,8 +106,8 @@ async def route(db,ctx):
         if ctx.operation!='preflight':
             import anyio
             with anyio.CancelScope(shield=True):
-                async with session_factory.begin() as history:
-                    history.add(RouteDecision(request_id=ctx.request_id,config_id=snapshot['id'],virtual_model=snapshot['virtual_model'],
+                from app.services.route_decisions import write
+                await write(dict(request_id=ctx.request_id,config_id=snapshot['id'],virtual_model=snapshot['virtual_model'],
                         embedding_request_id=embedding_id,top_k=snapshot['top_k'],similarity=similarity,classification=classification,
                         source=source,request_kind='real',normalized_text=text,confidence=confidence,selected_model=selected_model,
                         selected_model_group=selected,selected_group_name=group_name,status=status,reason=reason,evidence=evidence,

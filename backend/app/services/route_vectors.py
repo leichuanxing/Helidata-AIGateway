@@ -118,7 +118,7 @@ even when an administrator chooses confidence_gap=0.
 """
     if not evidence:
         return Classification(None, None, None, 'ROUTE_NO_SAMPLES')
-    eligible=[item for item in evidence if item.get('similarity_threshold') is None or item['similarity']>=item['similarity_threshold']]
+    eligible=[item for item in evidence if item['similarity']>=(item.get('similarity_threshold') if item.get('similarity_threshold') is not None else threshold)]
     if not eligible:return Classification(None,evidence[0]['similarity'],None,'ROUTE_LOW_SIMILARITY')
     evidence=eligible
     best = evidence[0]
