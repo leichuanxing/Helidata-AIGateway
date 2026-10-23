@@ -34,7 +34,7 @@ const links=computed(()=>portalMode.value?[
 function active(to:string){return route.path.startsWith(to)||to==='/admin/compliance/words'&&route.path.startsWith('/admin/compliance/')}
 const current=computed(()=>links.value.find(x=>active(x.to)))
 const title=computed(()=>current.value?.label||({'/portal/profile':'个人设置','/admin/backups':'数据备份','/admin/audit-logs':'管理审计'} as Record<string,string>)[route.path]||'详情')
-const section=computed(()=>({'/admin/smart-route/samples':'样本管理','/admin/smart-route/logs':'决策日志','/admin/smart-route/statistics':'统计','/admin/smart-route/configs':'路由规则','/admin/compliance/words':'词库','/admin/compliance/samples':'样本','/admin/compliance/policies':'策略','/admin/compliance/logs':'审核日志'} as Record<string,string>)[route.path]||'详情')
+const section=computed(()=>({'/admin/smart-route/samples':'样本管理','/admin/smart-route/logs':'决策日志','/admin/smart-route/statistics':'统计','/admin/smart-route/configs':'路由规则','/admin/smart-route/configuration':'路由规则','/admin/compliance/configuration':'功能配置','/admin/compliance/words':'词库','/admin/compliance/samples':'样本','/admin/compliance/policies':'策略','/admin/compliance/logs':'审核日志'} as Record<string,string>)[route.path]||'详情')
 async function logout(){await auth.logout();await router.push('/login')}
 function command(value:string){
   if(value==='logout')void logout()

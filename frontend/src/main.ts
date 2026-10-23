@@ -1,7 +1,7 @@
 import {createApp,h} from 'vue'
 import {createPinia} from 'pinia'
 import {createRouter,createWebHistory} from 'vue-router'
-import {ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip,ElLoading,ElConfigProvider} from 'element-plus'
+import {ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadio,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip,ElLoading,ElConfigProvider} from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
@@ -44,13 +44,14 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/admin/settings',component:Settings,meta:{admin:true}},
   {path:'/admin/backups',redirect:{path:'/admin/settings',query:{tab:'backups'}},meta:{superAdmin:true}},
   {path:'/admin/audit-logs',redirect:{path:'/admin/settings',query:{tab:'audit'}},meta:{admin:true}},
-  ...['words','samples','policies','logs'].map(view=>({path:'/admin/compliance/'+view,component:Compliance,meta:{admin:true}})),
+  ...['words','samples','policies','logs','configuration'].map(view=>({path:'/admin/compliance/'+view,component:Compliance,meta:{admin:true,superAdmin:view==='configuration'}})),
   {path:'/admin/users',component:Users,meta:{admin:true}},
   {path:'/admin/users/:id',component:UserDetail,meta:{admin:true}},
   {path:'/admin/user-groups',component:Groups,meta:{admin:true}},
   {path:'/admin/model-groups',component:ModelGroups,meta:{admin:true}},
   {path:'/admin/balance-routes',component:()=>import('./views/BalanceRoutes.vue'),meta:{admin:true}},
   {path:'/admin/smart-route',redirect:'/admin/smart-route/samples'},
+  {path:'/admin/smart-route/configuration',redirect:to=>({path:'/admin/smart-route/configs',query:to.query,hash:to.hash}),meta:{admin:true}},
   ...['/admin/smart-route/configs','/admin/smart-route/samples','/admin/smart-route/logs','/admin/smart-route/statistics'].map(path=>({path,component:SmartRoute,meta:{admin:true}})),
   {path:'/admin/providers',component:Providers,meta:{admin:true}},
   {path:'/admin/providers/:id',component:ProviderDetail,meta:{admin:true}},
@@ -79,7 +80,7 @@ router.afterEach((to,from)=>{
 })
 router.onError(()=>{navigating.value=false})
 const app=createApp({render:()=>h(ElConfigProvider,{locale:zhCn},()=>h(App))})
-for(const component of [ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip])app.use(component)
+for(const component of [ElAlert,ElAutocomplete,ElButton,ElCard,ElCheckbox,ElCheckboxGroup,ElCollapse,ElCollapseItem,ElDatePicker,ElDescriptions,ElDescriptionsItem,ElDialog,ElDivider,ElDrawer,ElDropdown,ElDropdownItem,ElDropdownMenu,ElEmpty,ElForm,ElFormItem,ElInput,ElInputNumber,ElOption,ElPagination,ElPopover,ElProgress,ElRadio,ElRadioButton,ElRadioGroup,ElSelect,ElSkeleton,ElSwitch,ElTabPane,ElTable,ElTableColumn,ElTabs,ElTag,ElTooltip])app.use(component)
 app.use(ElLoading)
 app.component('PageHeader',PageHeader).component('EmptyState',EmptyState).component('UiIcon',UiIcon).use(pinia).use(router).mount('#app')
 

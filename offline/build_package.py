@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-IMAGE = 'helidata-ai-gateway:v1.0.8-offline'
-IMAGE_FILE = 'helidata-ai-gateway-v1.0.8-image.tar.gz'
-BUNDLE = 'helidata-ai-gateway-v1.0.8-linux-amd64-offline.tar.gz'
-CHECKSUMS = 'helidata-ai-gateway-v1.0.8-linux-amd64-SHA256SUMS'
+IMAGE = 'helidata-ai-gateway:v1.0.9-offline'
+IMAGE_FILE = 'helidata-ai-gateway-v1.0.9-image.tar.gz'
+BUNDLE = 'helidata-ai-gateway-v1.0.9-linux-amd64-offline.tar.gz'
+CHECKSUMS = 'helidata-ai-gateway-v1.0.9-linux-amd64-SHA256SUMS'
 
 def digest(path):
     checksum = hashlib.sha256()
@@ -50,9 +50,9 @@ def main():
         parser.error('镜像必须为 linux/amd64')
     revision=subprocess.check_output(['docker','run','--rm','--pull=never','--network','none','--entrypoint','python',IMAGE,
         '-c',"from alembic.config import Config; from alembic.script import ScriptDirectory; print(ScriptDirectory.from_config(Config('/app/backend/alembic.ini')).get_current_head())"],text=True).strip()
-    if revision!='0033':parser.error('镜像数据库迁移与发布源码不一致')
+    if revision!='0036':parser.error('镜像数据库迁移与发布源码不一致')
     with tempfile.TemporaryDirectory(dir=output, prefix='.offline-build-') as temporary:
-        stage = Path(temporary) / 'helidata-ai-gateway-v1.0.8-linux-amd64'
+        stage = Path(temporary) / 'helidata-ai-gateway-v1.0.9-linux-amd64'
         stage.mkdir()
         for source, target in (
             ('offline/deploy-offline.sh', 'deploy-offline.sh'),
@@ -75,7 +75,7 @@ def main():
                 if process.wait():
                     raise RuntimeError('docker save 失败')
         (stage / 'image-id.txt').write_text(info['Id'] + '\n', encoding='utf-8')
-        manifest = dict(version='1.0.8', database_revision='0033', image=IMAGE,
+        manifest = dict(version='1.0.9', database_revision='0036', image=IMAGE,
                         image_id=info['Id'], platform='linux/amd64', source_commit=args.commit,
                         source_dirty=args.source_dirty,
                         image_sha256=digest(archive), image_bytes=archive.stat().st_size)

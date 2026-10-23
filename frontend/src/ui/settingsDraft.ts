@@ -1,4 +1,4 @@
-export const settingsTabs:Record<string,string>={brand:'基础与品牌',basic:'基础设置',performance:'性能设置',vector:'向量服务',smart:'智能路由',compliance:'内容合规',elasticsearch:'Elasticsearch'}
+export const settingsTabs:Record<string,string>={brand:'基础与品牌',basic:'基础设置',performance:'性能设置',vector:'向量服务',elasticsearch:'Elasticsearch'}
 export const copy=<T>(value:T):T=>value===undefined?value:JSON.parse(JSON.stringify(value))
 export const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
 export function settingsPayload(form:any,rules:string,tab:string):Record<string,any>{
@@ -7,8 +7,6 @@ export function settingsPayload(form:any,rules:string,tab:string):Record<string,
     case 'basic':return {basic:{public_api_base_url:form.basic.public_api_base_url},logging:{...form.logging,redaction_rules:rules.split('\n').map(x=>x.trim()).filter(Boolean)},gateway:{protocol_conversion:form.gateway.protocol_conversion}}
     case 'performance':return {gateway:Object.fromEntries(Object.entries(form.gateway).filter(([key])=>key!=='protocol_conversion'))}
     case 'vector':return {vector:{...form.vector}}
-    case 'smart':return {governance:{smart_route_enabled:form.governance.smart_route_enabled}}
-    case 'compliance':return {governance:{compliance_enabled:form.governance.compliance_enabled,semantic_threshold:form.governance.semantic_threshold??null}}
     case 'elasticsearch':{const {secret_configured,...es}=form.elasticsearch;return {elasticsearch:es}}
     default:return {}
   }

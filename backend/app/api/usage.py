@@ -55,7 +55,7 @@ async def admin(actor=Depends(administrator),db=Depends(get_session),start:datet
     grain:Literal['hour','day']='day',user_id:int|None=Query(None,ge=1),user_group_id:int|None=Query(None,ge=1),
     api_key_id:int|None=Query(None,ge=1),provider_id:int|None=Query(None,ge=1),model:str=Query('',max_length=100),model_scope:Literal['either','request','actual']='either',
     dimension:Literal['request_model','logical_model','provider_id','user_id','user_group_id','api_key_id','protocol','operation']='request_model',
-    protocol:str=Query('',max_length=30),operation:Literal['','chat','responses','messages','embeddings','rerank','images']=''):
+    protocol:str=Query('',max_length=30),operation:Literal['','chat','responses','messages','embeddings','rerank','images','decision']=''):
     start,end=window(start,end)
     return {'data':await statistics(db,start,end,grain,dict(user_id=user_id,user_group_id=user_group_id,api_key_id=api_key_id,provider_id=provider_id,**model_filter(model,model_scope),protocol=protocol,operation=operation),dimension)}
 
@@ -63,6 +63,6 @@ async def admin(actor=Depends(administrator),db=Depends(get_session),start:datet
 @router.get('/api/portal/usage')
 async def portal(actor=Depends(active_user),db=Depends(get_session),start:datetime|None=None,end:datetime|None=None,
     grain:Literal['hour','day']='day',api_key_id:int|None=Query(None,ge=1),model:str=Query('',max_length=100),model_scope:Literal['either','request','actual']='either',
-    dimension:Literal['request_model','logical_model','api_key_id','operation']='request_model',operation:Literal['','chat','responses','messages','embeddings','rerank','images']=''):
+    dimension:Literal['request_model','logical_model','api_key_id','operation']='request_model',operation:Literal['','chat','responses','messages','embeddings','rerank','images','decision']=''):
     start,end=window(start,end)
     return {'data':await statistics(db,start,end,grain,dict(user_id=actor.id,api_key_id=api_key_id,**model_filter(model,model_scope),operation=operation),dimension)}

@@ -9,6 +9,12 @@ import httpx
 class SmartRouteHTTPTests(unittest.IsolatedAsyncioTestCase):
  async def test_rules_samples_jobs_protocols_compliance_and_statistics(self):
   ident=os.environ.get('AUDIT_CONTAINER_ID','');self.assertGreaterEqual(len(ident),12);self.assertEqual(os.environ.get('HOSTNAME','')[:12],ident[:12])
+  from sqlalchemy import text
+  from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
+  from sqlalchemy.pool import NullPool
+  from app.core.database import connect_database,settings
+  engine=create_async_engine(settings.url(),poolclass=NullPool,async_creator=lambda:connect_database(settings));self.addAsyncCleanup(engine.dispose)
+  factory=async_sessionmaker(engine,expire_on_commit=False)
   calls=[];modes={'embedding':'ok'}
   class Handler(BaseHTTPRequestHandler):
    def log_message(self,*args):pass
@@ -65,6 +71,10 @@ class SmartRouteHTTPTests(unittest.IsolatedAsyncioTestCase):
      'model_mappings':[{'logical_model':prefix+label,'upstream_model':label,'model_type':'embedding' if label=='embedding' else 'text'}]},201)
     providers.append(provider)
     if label!='embedding':groups.append(await api('POST','admin/model-groups',{'name':prefix+label,'protocol_type':'text','logical_models':[prefix+label]},201))
+   options=await api('GET','admin/model-group-options')
+   for group in groups:
+    option=next(item for item in options if item['id']==group['id'])
+    self.assertEqual(option['protocol_type'],'text');self.assertEqual(option['status'],'enabled')
    body={'virtual_model':prefix+'virtual','embedding_model':prefix+'embedding','simple_model_group':groups[0]['id'],'complex_model_group':groups[1]['id'],'status':'enabled','fallback':'error'}
    cfg=await api('POST','admin/smart-route/configs',body,201);path='admin/smart-route/configs/'+str(cfg['id'])
    async def save(**changes):
@@ -78,16 +88,34 @@ class SmartRouteHTTPTests(unittest.IsolatedAsyncioTestCase):
    await api('DELETE','admin/model-groups/'+str(groups[0]['id']),status=409)
    added=await api('POST','admin/smart-route/samples',{'config_id':cfg['id'],'samples':[{'prompt':'simple sample','classification':'simple','build_vector':False},{'prompt':'complex sample','classification':'complex','build_vector':False}]},201)
    ids=added['ids'];self.assertEqual(added['queued'],0)
+   empty_ready=next(c for c in await api('GET','admin/smart-route/configs') if c['id']==cfg['id'])
+   self.assertEqual(empty_ready['sample_summary'],{'total':2,'ready':0})
+   first=(await api('GET','admin/smart-route/samples',params={'config_id':cfg['id']}))['items'][-1]
+   sample_edit={'prompt':first['prompt'],'classification':first['classification'],'build_vector':False,'expected_revision':first['revision'],'remark':'current edit'}
+   await api('PUT','admin/smart-route/samples/'+str(first['id']),sample_edit)
+   await api('PUT','admin/smart-route/samples/'+str(first['id']),{**sample_edit,'remark':'stale overwrite'},409)
+
    await api('POST','admin/smart-route/samples',{'config_id':cfg['id'],'samples':[{'prompt':' simple sample ','classification':'complex'}]},409)
    await api('POST','admin/smart-route/samples/import',{'config_id':cfg['id'],'content':'prompt,classification\nnew,simple\ninvalid,wrong','build_vector':False},400)
    listed=await api('GET','admin/smart-route/samples',params={'config_id':cfg['id'],'vector_status':'not_built'});self.assertEqual(listed['total'],2)
    await api('POST','admin/smart-route/samples/vectorize',{'config_id':cfg['id'],'sample_ids':[ids[0],999999]},400)
+   # Inject a running-job state only in this guarded disposable database.
+   async with factory.begin() as db:
+    await db.execute(text("UPDATE route_samples SET vector_status='processing',vector_requested=true,job_started_at=now() WHERE id=ANY(CAST(:ids AS bigint[]))"),{'ids':ids})
+   busy=(await api('GET','admin/smart-route/samples',params={'config_id':cfg['id']}))['items']
+   self.assertEqual((await api('POST','admin/smart-route/samples/vectorize',{'config_id':cfg['id'],'all_samples':True}))['queued'],0)
+   await api('POST','admin/smart-route/samples/'+str(ids[0])+'/vectorize',{},409)
+   after=(await api('GET','admin/smart-route/samples',params={'config_id':cfg['id']}))['items']
+   self.assertEqual([(r['id'],r['revision']) for r in busy],[(r['id'],r['revision']) for r in after])
+   async with factory.begin() as db:
+    await db.execute(text("UPDATE route_samples SET vector_status='pending',vector_requested=false,job_started_at=NULL WHERE id=ANY(CAST(:ids AS bigint[]))"),{'ids':ids})
    await api('POST','admin/smart-route/samples/vectorize',{'config_id':cfg['id'],'all_samples':True})
    for _ in range(100):
     listed=await api('GET','admin/smart-route/samples',params={'config_id':cfg['id']})
     if all(s['vector_status']=='ready' for s in listed['items']):break
     await asyncio.sleep(.2)
    self.assertTrue(all(s['vector_status']=='ready' for s in listed['items']),listed)
+   self.assertEqual(next(c for c in await api('GET','admin/smart-route/configs') if c['id']==cfg['id'])['sample_summary'],{'total':2,'ready':2})
    before=len(calls);preview=await api('POST',path+'/preview',{'prompt':'simple sample'})
    self.assertEqual(preview['source'],'local_rule');self.assertEqual(len(calls),before)
    preview=await api('POST',path+'/preview',{'prompt':'complex unseen'})

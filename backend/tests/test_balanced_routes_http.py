@@ -66,7 +66,13 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                 login=await admin.post('/api/auth/login',json={'username':'admin','password':Path('/data/config/audit-password.txt').read_text().strip()});self.assertEqual(login.status_code,200)
                 admin.headers['Authorization']='Bearer '+login.json()['data']['access_token']
                 async def api(method,path,body=None,status=200):
-                    r=await admin.request(method,'/api/'+path,json=body);self.assertEqual(r.status_code,status,r.text[:300]);return r.json().get('data')
+                    # Background probes own the same Redis lease. Wait only for
+                    # CHECK_BUSY; all actual errors/results retain their assertions.
+                    for _ in range(60):
+                        r=await admin.request(method,'/api/'+path,json=body);self.assertEqual(r.status_code,status,r.text[:300]);data=r.json().get('data')
+                        if not (method=='POST' and path.endswith('/check') and isinstance(data,dict) and data.get('code')=='CHECK_BUSY'):return data
+                        await asyncio.sleep(.1)
+                    self.fail('node probe remained CHECK_BUSY')
                 async def log(request_id):
                     for _ in range(40):
                         r=await admin.get('/api/admin/call-logs/'+request_id)
@@ -304,7 +310,7 @@ class BalancedHTTPTests(unittest.IsolatedAsyncioTestCase):
                         checked=await api('POST',split_path+f'/nodes/{split_node}/check',{})
                         self.assertFalse(checked['success'])
                         failing=(await api('GET',split_path))['nodes'][0]
-                        self.assertEqual(failing['failure_count'],attempt)
+                        self.assertEqual(failing['failure_count'],attempt,checked)
                         self.assertEqual(failing['cooldown_until'] is not None,attempt==3)
                     await patch_provider(split['id'],{'protocol_config':{'openai-completions':{'api_url':f'http://127.0.0.1:{server.server_port}/correct/v1'}}})
                     self.assertTrue((await api('POST',split_path+f'/nodes/{split_node}/check',{}))['success'])

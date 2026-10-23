@@ -29,9 +29,20 @@ class RouteConfig(Base):
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     virtual_model: Mapped[str] = mapped_column(ForeignKey('logical_models.name', ondelete='RESTRICT'), unique=True)
-    embedding_model: Mapped[str] = mapped_column(ForeignKey('logical_models.name', ondelete='RESTRICT'))
-    simple_model_group: Mapped[int] = mapped_column(ForeignKey('model_groups.id', ondelete='RESTRICT'))
-    complex_model_group: Mapped[int] = mapped_column(ForeignKey('model_groups.id', ondelete='RESTRICT'))
+    embedding_model: Mapped[str | None] = mapped_column(ForeignKey('logical_models.name', ondelete='RESTRICT'))
+    simple_model_group: Mapped[int | None] = mapped_column(ForeignKey('model_groups.id', ondelete='RESTRICT'))
+    complex_model_group: Mapped[int | None] = mapped_column(ForeignKey('model_groups.id', ondelete='RESTRICT'))
+    route_mode: Mapped[str] = mapped_column(String(20),default='vector',server_default='vector')
+    decision_provider: Mapped[str] = mapped_column(String(20),default='typesafe',server_default='typesafe')
+    decision_service_url: Mapped[str] = mapped_column(String(2048),default='',server_default='')
+    decision_workspace: Mapped[str] = mapped_column(String(63),default='',server_default='')
+    decision_region: Mapped[str] = mapped_column(String(30),default='cn-beijing',server_default='cn-beijing')
+    aliyun_key_encrypted: Mapped[str | None] = mapped_column(Text)
+    decision_key_encrypted: Mapped[str | None] = mapped_column(Text)
+    decision_timeout: Mapped[int] = mapped_column(Integer,default=15,server_default='15')
+    decision_threshold: Mapped[float] = mapped_column(Float,default=.5,server_default='0.5')
+    decision_fallback_group: Mapped[int | None] = mapped_column(ForeignKey('model_groups.id',ondelete='RESTRICT'))
+    decision_targets: Mapped[list] = mapped_column(JSONB,default=list,server_default='[]')
     top_k: Mapped[int] = mapped_column(Integer, default=5, server_default='5')
     similarity_threshold: Mapped[float] = mapped_column(Float, default=0.75, server_default='0.75')
     confidence_gap: Mapped[float] = mapped_column(Float, default=0.1, server_default='0.1')
@@ -95,7 +106,7 @@ class RouteDecision(Base):
         CheckConstraint('top_k BETWEEN 1 AND 50', name='ck_route_decision_top_k'),
         CheckConstraint('similarity IS NULL OR similarity BETWEEN -1 AND 1', name='ck_route_decision_similarity'),
         CheckConstraint("elapsed_ms >= 0 AND elapsed_ms < 'Infinity'::double precision", name='ck_route_decision_elapsed'),
-        CheckConstraint("source IN ('legacy','vector','local_rule','fallback','error')",name='ck_route_decision_source'),
+        CheckConstraint("source IN ('legacy','vector','local_rule','fallback','error','model')",name='ck_route_decision_source'),
         CheckConstraint("request_kind IN ('real','preview')",name='ck_route_decision_kind'),
         CheckConstraint('confidence IS NULL OR (confidence >= 0 AND confidence <= 2)',name='ck_route_decision_confidence'),
         CheckConstraint('normalized_text IS NULL OR length(normalized_text) <= 16000',name='ck_route_decision_text'),
@@ -107,6 +118,9 @@ class RouteDecision(Base):
     # Historical IDs and snapshots intentionally survive config/group/sample deletion.
     config_id: Mapped[int] = mapped_column(Integer)
     virtual_model: Mapped[str] = mapped_column(String(100))
+    decision_model: Mapped[str | None] = mapped_column(String(100))
+    decision_target: Mapped[str | None] = mapped_column(String(80))
+    decision_request_id: Mapped[str | None] = mapped_column(String(80))
     embedding_request_id: Mapped[str | None] = mapped_column(String(80))
     source: Mapped[str] = mapped_column(String(20),default='legacy',server_default='legacy')
     request_kind: Mapped[str] = mapped_column(String(20),default='real',server_default='real')

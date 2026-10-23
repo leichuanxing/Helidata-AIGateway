@@ -22,7 +22,7 @@ async def listing(actor=Depends(administrator),db=Depends(get_session),
     api_key_id:int|None=Query(None,ge=1),provider_id:int|None=Query(None,ge=1),model:str=Query('',max_length=100),
     model_scope:Literal['either','request','actual']='either',request_model:str=Query('',max_length=100),logical_model:str=Query('',max_length=100),
     status:Literal['','success','failure','client_cancelled','failed']='',http_status:int|None=Query(None,ge=100,le=599),
-    protocol:str=Query('',max_length=30),error_code:str=Query('',max_length=80),operation:Literal['','chat','responses','messages','embeddings','rerank','images','models','preflight']='',
+    protocol:str=Query('',max_length=30),error_code:str=Query('',max_length=80),operation:Literal['','chat','responses','messages','embeddings','rerank','images','decision','models','preflight']='',
     stream:bool|None=None,min_latency_ms:float|None=Query(None,ge=0,le=3600000,allow_inf_nan=False),
     start:datetime|None=None,end:datetime|None=None):
     query=select(CallLog)

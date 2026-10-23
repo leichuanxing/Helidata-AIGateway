@@ -12,7 +12,7 @@ from app.core.exceptions import APIError
 from app.models.user import LogicalModel,ModelGroup,ModelGroupModel
 from app.models.routing import RouteConfig,RouteSample,RouteVector,RouteDecision
 from app.models.call_log import CallLog
-from app.schemas.routing import RouteConfigInput,RouteSamplesInput,RouteSampleInput,parse_samples_csv
+from app.schemas.routing import DecisionModelTestInput,RouteConfigInput,RouteSamplesInput,RouteSampleInput,parse_samples_csv
 from app.api.admin.model_mappings import config_lock
 from app.services.model_catalog import candidates
 from app.services.sessions import audit
@@ -22,7 +22,11 @@ router=APIRouter(prefix='/api/admin/smart-route',tags=['智能路由'])
 
 
 def public(row):
-    return {column.name:getattr(row,column.name) for column in row.__table__.columns}
+    value={column.name:getattr(row,column.name) for column in row.__table__.columns if column.name not in ('decision_key_encrypted','aliyun_key_encrypted')}
+    if isinstance(row,RouteConfig):
+        from app.services.model_decision import key_value
+        value['decision_key_configured']=bool(key_value(row))
+    return value
 
 
 async def config(db,ident,lock=False):
@@ -51,7 +55,30 @@ async def real_members(db,group_id,operation=None):
 
 @router.get('/configs')
 async def listing(actor=Depends(administrator),db=Depends(get_session)):
-    return {'data':[public(row) for row in (await db.scalars(select(RouteConfig).order_by(RouteConfig.id))).all()]}
+    from app.services.operations_settings import vector
+    rows=(await db.scalars(select(RouteConfig).order_by(RouteConfig.id))).all()
+    ready=(RouteSample.vector_status=='ready') & (RouteSample.revision==RouteVector.sample_revision) & (RouteVector.vector_generation==RouteConfig.vector_generation) & (RouteVector.embedding_model==RouteConfig.embedding_model)
+    summaries=(await db.execute(select(RouteSample.config_id,func.count().label('total'),func.count().filter(ready).label('ready'))
+        .join(RouteConfig,RouteConfig.id==RouteSample.config_id).outerjoin(RouteVector,RouteVector.sample_id==RouteSample.id).group_by(RouteSample.config_id))).mappings().all()
+    counts={r['config_id']:{'total':r['total'],'ready':r['ready']} for r in summaries}
+    return {'data':[{**public(row),'sample_summary':counts.get(row.id,{'total':0,'ready':0})} for row in rows],'meta':{'shared_vector_model':vector['model']}}
+
+
+async def validate_config_mode(body,db,row=None):
+    from app.services.operations_settings import vector
+    if body.route_mode=='vector':
+        if vector['model'] and body.embedding_model!=vector['model']:raise APIError(400,'VECTOR_MODEL_MISMATCH','路由规则需使用系统配置中的共享向量模型')
+        embedding=await db.get(LogicalModel,body.embedding_model)
+        from app.services.vector_service import pin
+        if not embedding or embedding.model_type!='embedding' or not any(compatible('embeddings',p) for m,p in pin(await candidates(db,body.embedding_model),body.embedding_model)):
+            raise APIError(400,'ROUTE_EMBEDDING_UNAVAILABLE','请选择有可用映射的Embedding逻辑模型')
+        for ident in (body.simple_model_group,body.complex_model_group):await real_members(db,ident)
+    key_field='aliyun_key_encrypted' if body.decision_provider=='aliyun' else 'decision_key_encrypted'
+    has_key=bool(body.decision_api_key) or bool(row and getattr(row,key_field) and not body.clear_decision_key)
+    if body.route_mode=='model':
+        for ident in {body.decision_fallback_group,*[t.model_group_id for t in body.decision_targets]}:await real_members(db,ident)
+        if body.status=='enabled' and not has_key:raise APIError(400,'ROUTE_MODEL_NOT_CONFIGURED','启用模型决策前请配置决策服务 API Key')
+    return key_field
 
 
 async def save(body,request,actor,db,row=None):
@@ -63,21 +90,23 @@ async def save(body,request,actor,db,row=None):
         if body.virtual_model!=row.virtual_model:raise APIError(409,'ROUTE_NAME_IMMUTABLE','虚拟模型名称不可修改，请新建规则')
     elif await db.get(LogicalModel,body.virtual_model):
         raise APIError(409,'ROUTE_NAME_CONFLICT','虚拟模型名称已被逻辑模型或路由占用')
-    from app.services.operations_settings import vector
-    if vector['model'] and body.embedding_model!=vector['model']:raise APIError(400,'VECTOR_MODEL_MISMATCH','路由规则需使用系统配置中的共享向量模型')
-    embedding=await db.get(LogicalModel,body.embedding_model)
-    from app.services.vector_service import pin
-    if not embedding or embedding.model_type!='embedding' or not any(compatible('embeddings',p) for m,p in pin(await candidates(db,body.embedding_model),body.embedding_model)):
-        raise APIError(400,'ROUTE_EMBEDDING_UNAVAILABLE','请选择有可用OpenAI兼容映射的Embedding逻辑模型')
-    for ident in (body.simple_model_group,body.complex_model_group):await real_members(db,ident)
+    key_field=await validate_config_mode(body,db,row)
+    from app.services.provider_crypto import encrypt_secret
+    values=body.model_dump(exclude={'expected_updated_at','decision_api_key','clear_decision_key'})
+    if row:
+        # Hidden mode settings remain intact when older clients omit those fields.
+        for key in ('embedding_model','simple_model_group','complex_model_group','decision_targets','decision_fallback_group','decision_timeout','decision_threshold','decision_provider','decision_workspace','decision_region','decision_service_url'):
+            if key not in body.model_fields_set:values.pop(key,None)
+    if body.decision_api_key:values[key_field]=encrypt_secret(body.decision_api_key.get_secret_value())
+    elif body.clear_decision_key:values[key_field]=None
     if not row:
         if await db.scalar(select(func.count()).select_from(RouteConfig))>=100:
             raise APIError(400,'ROUTE_CONFIG_LIMIT','最多配置100条路由规则')
         db.add(LogicalModel(name=body.virtual_model,model_type='text'));await db.flush()
-        row=RouteConfig(**body.model_dump(exclude={'expected_updated_at'}));db.add(row);action='create_route'
+        row=RouteConfig(**values);db.add(row);action='create_route'
     else:
-        changed=row.embedding_model!=body.embedding_model
-        for name,value in body.model_dump(exclude={'expected_updated_at'}).items():setattr(row,name,value)
+        changed=row.embedding_model!=values.get('embedding_model',row.embedding_model)
+        for name,value in values.items():setattr(row,name,value)
         if changed:
             row.vector_generation+=1
             await db.execute(update(RouteSample).where(RouteSample.config_id==row.id).values(vector_status='stale',vector_requested=False,vector_error=None,
@@ -110,7 +139,8 @@ async def preview(ident:int,body:PreviewInput,request:Request,actor=Depends(admi
     from app.gateway.request_id import generate
     import anyio
     cfg=await config(db,ident);started=monotonic()
-    fields=('embedding_model','vector_generation','simple_model_group','complex_model_group','top_k','similarity_threshold','confidence_gap','fallback','status')
+    if cfg.route_mode=='model':return await model_preview(db,request,actor,cfg,body.prompt,started)
+    fields=('route_mode','embedding_model','vector_generation','simple_model_group','complex_model_group','top_k','similarity_threshold','confidence_gap','fallback','status')
     snapshot={key:getattr(cfg,key) for key in fields};virtual_model=cfg.virtual_model
     text=normalize_prompt(body.prompt);source='vector';embedding_id=None;evidence=[];choice=None
     classification=None;status='failed';reason=None;group_id=None;group_name=None;models=[]
@@ -188,7 +218,8 @@ async def samples(config_id:int,actor=Depends(administrator),db=Depends(get_sess
 
 
 async def add_samples(ident,items,request,actor,db,build_vector=None):
-    await config_lock(db);await config(db,ident,True)
+    await config_lock(db);cfg=await config(db,ident,True)
+    if cfg.route_mode=='model':raise APIError(409,'ROUTE_MODE_MISMATCH','样本仅用于本地/向量模式，请先切换模式')
     hashes=[hashlib.sha256(item.prompt.encode()).hexdigest() for item in items]
     if len(hashes)!=len(set(hashes)) or await db.scalar(select(RouteSample.id).where(RouteSample.config_id==ident,RouteSample.prompt_hash.in_(hashes)).limit(1)):
         raise APIError(409,'ROUTE_SAMPLE_DUPLICATE','样本Prompt重复，本批次未导入')
@@ -234,15 +265,16 @@ class BuildSamplesInput(BaseModel):
 
 @router.post('/samples/vectorize')
 async def build_samples(body:BuildSamplesInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
-    await config_lock(db);await config(db,body.config_id,True)
+    await config_lock(db);cfg=await config(db,body.config_id,True)
+    if cfg.route_mode=='model':raise APIError(409,'ROUTE_MODE_MISMATCH','模型决策模式不构建样本向量')
     query=select(RouteSample).where(RouteSample.config_id==body.config_id)
     if not body.all_samples:query=query.where(RouteSample.id.in_(body.sample_ids))
     rows=(await db.scalars(query.with_for_update())).all()
     if not body.all_samples and len(rows)!=len(body.sample_ids):
         raise APIError(400,'ROUTE_SAMPLE_SELECTION_INVALID','选中的样本不存在或不属于当前规则')
-    for row in rows:retry_sample(row,actor)
+    queued=sum(retry_sample(row,actor) for row in rows)
     audit(db,actor.id,'build_route_vectors',body.config_id,request.client.host,resource_type='route_config')
-    await db.commit();return {'data':{'queued':len(rows)}}
+    await db.commit();return {'data':{'queued':queued}}
 
 
 async def locked_sample(db,ident):
@@ -254,18 +286,24 @@ async def locked_sample(db,ident):
     return row
 
 
-def retry_sample(row,actor):
+def retry_sample(row,actor,*,force=False):
+    if not force and (row.vector_status=='processing' or row.vector_status=='pending' and row.vector_requested):return False
     row.revision+=1;row.vector_status='pending';row.vector_error=None
     row.vector_requested=True
     row.job_started_at=None;row.vector_request_id=None;row.requested_by=actor.id
+    return True
 
 
 @router.put('/samples/{ident}')
 async def sample_edit(ident:int,body:RouteSampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
-    row=await locked_sample(db,ident);digest=hashlib.sha256(body.prompt.encode()).hexdigest()
+    row=await locked_sample(db,ident)
+    cfg=await config(db,row.config_id)
+    if body.expected_revision is not None and body.expected_revision!=row.revision:raise APIError(409,'ROUTE_SAMPLE_CHANGED','样本已被修改或重新构建，请重新打开后保存')
+    if cfg.route_mode=='model':raise APIError(409,'ROUTE_MODE_MISMATCH','样本仅用于本地/向量模式')
+    digest=hashlib.sha256(body.prompt.encode()).hexdigest()
     if await db.scalar(select(RouteSample.id).where(RouteSample.config_id==row.config_id,RouteSample.prompt_hash==digest,RouteSample.id!=ident)):
         raise APIError(409,'ROUTE_SAMPLE_DUPLICATE','相同Prompt的样本已存在')
-    row.prompt=body.prompt;row.prompt_hash=digest;row.classification=body.classification;retry_sample(row,actor)
+    row.prompt=body.prompt;row.prompt_hash=digest;row.classification=body.classification;retry_sample(row,actor,force=True)
     row.similarity_threshold=body.similarity_threshold;row.remark=body.remark;row.vector_requested=body.build_vector
     await db.flush();await db.refresh(row);result=public(row)
     audit(db,actor.id,'update_route_sample',ident,request.client.host,resource_type='route_sample');await db.commit()
@@ -274,7 +312,10 @@ async def sample_edit(ident:int,body:RouteSampleInput,request:Request,actor=Depe
 
 @router.post('/samples/{ident}/vectorize')
 async def sample_retry(ident:int,request:Request,actor=Depends(administrator),db=Depends(get_session)):
-    row=await locked_sample(db,ident);retry_sample(row,actor)
+    row=await locked_sample(db,ident)
+    cfg=await config(db,row.config_id)
+    if cfg.route_mode=='model':raise APIError(409,'ROUTE_MODE_MISMATCH','模型决策模式不构建样本向量')
+    if not retry_sample(row,actor):raise APIError(409,'ROUTE_SAMPLE_BUSY','样本已排队或正在构建，请等待完成')
     await db.flush();await db.refresh(row);result=public(row)
     audit(db,actor.id,'retry_route_sample',ident,request.client.host,resource_type='route_sample');await db.commit()
     return {'data':result}
@@ -312,9 +353,9 @@ def decision_row(row,detail=False):
 async def logs(actor=Depends(administrator),db=Depends(get_session),request_id:str|None=Query(None,max_length=80),
                virtual_model:str|None=Query(None,max_length=100),start:datetime|None=None,end:datetime|None=None,
                classification:str|None=Query(None,pattern='^(simple|complex|unclassified)$'),
-               status:str|None=Query(None,pattern='^(classified|fallback|failed)$'),
+               status:str|None=Query(None,pattern='^(classified|fallback|failed)$'),decision_target:str|None=Query(None,max_length=80),
                operation:str|None=Query(None,max_length=20),selected_model:str|None=Query(None,max_length=100),
-               source:str|None=Query(None,pattern='^(vector|local_rule|fallback|error|legacy)$'),
+               source:str|None=Query(None,pattern='^(vector|local_rule|fallback|error|legacy|model)$'),
                request_kind:str|None=Query(None,pattern='^(real|preview)$'),q:str=Query('',max_length=200),
                page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100)):
     query=decision_query()
@@ -322,7 +363,8 @@ async def logs(actor=Depends(administrator),db=Depends(get_session),request_id:s
     else:
         start,end=period(start,end);query=query.where(RouteDecision.created_at>=start,RouteDecision.created_at<end)
     if virtual_model:query=query.where(RouteDecision.virtual_model==virtual_model)
-    if classification=='unclassified':query=query.where(RouteDecision.classification.is_(None))
+    if decision_target:query=query.where(RouteDecision.decision_target==decision_target)
+    if classification=='unclassified':query=query.where(func.coalesce(RouteDecision.decision_target,RouteDecision.classification).is_(None))
     elif classification:query=query.where(RouteDecision.classification==classification)
     if status:query=query.where(RouteDecision.status==status)
     if operation:query=query.where(CallLog.operation==operation)
@@ -357,7 +399,7 @@ async def statistics(actor=Depends(administrator),db=Depends(get_session),start:
         func.count(CallLog.total_tokens).label('usage_count'),func.sum(CallLog.total_tokens).label('total_tokens'),
         func.avg(CallLog.total_tokens).label('average_tokens'),func.sum(RouteDecision.elapsed_ms).label('elapsed_ms')]
     overview=(await db.execute(joined(select(*metrics())))).mappings().one()
-    dimensions=(RouteDecision.classification,RouteDecision.status,RouteDecision.selected_model_group,RouteDecision.selected_group_name)
+    dimensions=(func.coalesce(RouteDecision.decision_target,RouteDecision.classification).label('classification'),RouteDecision.status,RouteDecision.selected_model_group,RouteDecision.selected_group_name)
     rows=(await db.execute(joined(select(*dimensions,func.count().label('requests'),func.avg(RouteDecision.elapsed_ms).label('elapsed_ms'),
         func.avg(RouteDecision.similarity).label('similarity'),func.sum(CallLog.total_tokens).label('total_tokens'),func.count(CallLog.total_tokens).label('usage_count')))
         .group_by(*dimensions))).mappings().all()
@@ -366,8 +408,75 @@ async def statistics(actor=Depends(administrator),db=Depends(get_session),start:
         return [dict(row) for row in (await db.execute(statement)).mappings().all()]
     token_band=case((CallLog.total_tokens.is_(None),'unknown'),(CallLog.total_tokens<1000,'0-999'),
         (CallLog.total_tokens<10000,'1000-9999'),else_='10000+')
-    distributions={'classification':await distribution(RouteDecision.classification),'source':await distribution(RouteDecision.source),
-        'model':await distribution(func.coalesce(CallLog.logical_model,RouteDecision.selected_model)),'tokens':await distribution(token_band)}
+    distributions={'classification':await distribution(func.coalesce(RouteDecision.decision_target,RouteDecision.classification)),'source':await distribution(RouteDecision.source),
+        'model':await distribution(func.coalesce(CallLog.logical_model,RouteDecision.selected_model)),'tokens':await distribution(token_band),'decision_model':await distribution(RouteDecision.decision_model)}
     return {'data':{'start':start,'end':end,'items':[dict(row) for row in rows],'summary':dict(overview),
         'distributions':distributions,'token_scope':'仅父推理请求；Embedding子调用在独立用量中统计',
         'metric_scope':'真实请求与预览分别计数；失败包含决策失败、实际调用失败或客户端取消（不重复）；Token仅统计父推理已上报用量；累计耗时为决策耗时'}}
+
+
+async def model_preview(db,request,actor,cfg,text,started):
+    from app.services.model_decision import decide,provider_model
+    from app.services.route_vectors import normalize_prompt
+    from app.services.route_decisions import write
+    import anyio
+    ident=cfg.id;virtual=cfg.virtual_model;top_k=cfg.top_k;model_name=provider_model(cfg);record={}
+    text=normalize_prompt(text)
+    try:
+        cfg,selected,target,confidence,evidence,reason,decision_id=await decide(db,request,cfg,text,actor)
+        group,models=await real_members(db,selected)
+        record=dict(status='fallback' if reason else 'classified',classification=None,similarity=None,confidence=confidence,reason=reason,
+            source='model',normalized_text=text,request_kind='preview',selected_model_group=selected,selected_group_name=group.name,
+            selected_model=models[0],candidate_models=models,evidence=evidence,top_k=top_k,embedding_request_id=None,
+            decision_model=model_name,decision_target=target,decision_request_id=decision_id or getattr(request.state,'model_decision_request_id',None),virtual_model=virtual,preview=True,request_id=request.state.request_id)
+        return {'data':{**record,'elapsed_ms':round((monotonic()-started)*1000,2)}}
+    except BaseException as error:
+        record=dict(status='failed',reason=error.detail['code'] if isinstance(error,APIError) else 'ROUTE_MODEL_INTERRUPTED',
+            source='model',request_kind='preview',normalized_text=text,decision_model=model_name,decision_request_id=getattr(request.state,'model_decision_request_id',None),evidence=[],classification=None)
+        raise
+    finally:
+        if db.in_transaction():db.expunge_all();await db.rollback()
+        with anyio.CancelScope(shield=True):
+            await write({k:v for k,v in dict(record,config_id=ident,virtual_model=virtual,top_k=top_k,request_id=request.state.request_id,elapsed_ms=round((monotonic()-started)*1000,2)).items() if k not in ('candidate_models','preview')})
+
+
+@router.post('/configs/{ident}/test-connection')
+async def decision_connection(ident:int,actor=Depends(administrator),db=Depends(get_session)):
+    import httpx
+    from app.services.provider_crypto import decrypt_secret
+    cfg=await config(db,ident)
+    if cfg.decision_provider!='typesafe':raise APIError(400,'ROUTE_MODEL_TEST_REQUIRED','阿里云请使用模型决策预览验证实际接口')
+    if not cfg.decision_key_encrypted:raise APIError(400,'ROUTE_MODEL_NOT_CONFIGURED','请先保存TypeSafe API Key')
+    key=decrypt_secret(cfg.decision_key_encrypted);await db.commit()
+    try:
+        async with httpx.AsyncClient(timeout=5,follow_redirects=False,trust_env=False) as client:
+            async with client.stream('GET','https://api.typesafe.ai/v1/models',headers={'Authorization':'Bearer '+key}) as response:
+                if response.status_code!=200:raise APIError(502,'ROUTE_MODEL_CONNECTION_FAILED','决策服务连接或鉴权失败')
+        return {'data':{'connected':True,'provider':'TypeSafe','model':'jev-latest'}}
+    except httpx.HTTPError:raise APIError(503,'ROUTE_MODEL_CONNECTION_FAILED','无法连接TypeSafe服务') from None
+
+
+@router.post('/test-model')
+async def test_decision_model(body: DecisionModelTestInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
+    from types import SimpleNamespace
+    from app.services.model_decision import invoke,provider_model
+    from app.services.provider_crypto import decrypt_secret
+    cfg=await config(db,body.config_id) if body.config_id else None
+    if cfg and body.expected_updated_at is not None and cfg.updated_at!=body.expected_updated_at:
+        raise APIError(409,'ROUTE_CHANGED','规则已变化，请重新打开后测试')
+    key=body.decision_api_key.get_secret_value() if body.decision_api_key else decrypt_secret((cfg.aliyun_key_encrypted if body.decision_provider=='aliyun' else cfg.decision_key_encrypted) if cfg else None)
+    if not key:raise APIError(400,'ROUTE_MODEL_NOT_CONFIGURED','请填写所选供应商的决策 API Key')
+    test_cfg=SimpleNamespace(id=cfg.id if cfg else -actor.id,virtual_model=cfg.virtual_model if cfg else 'decision-test',
+        decision_service_url=body.decision_service_url,decision_provider=body.decision_provider,decision_workspace=body.decision_workspace,decision_region=body.decision_region,
+        decision_timeout=body.decision_timeout,decision_threshold=0,
+        decision_targets=[{'name':'问候','description':'日常问候','model_group_id':1},{'name':'计算','description':'数学计算','model_group_id':2}])
+    await db.commit()
+    started=monotonic();metadata={};result={'available':False,'model':provider_model(test_cfg)}
+    try:
+        await invoke(request,actor,test_cfg,'你好',key_override=key,metadata=metadata)
+        result.update(available=True,message='模型可用，真实决策响应格式验证通过')
+    except APIError as error:
+        if not error.detail['code'].startswith('ROUTE_MODEL_'):raise
+        result.update(code=error.detail['code'],message=error.detail['message'])
+    return {'data':{**result,'elapsed_ms':round((monotonic()-started)*1000,2),
+        'upstream_status':metadata.get('upstream_status'),'request_id':getattr(request.state,'model_decision_request_id',None)}}

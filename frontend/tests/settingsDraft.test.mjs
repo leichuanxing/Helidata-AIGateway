@@ -7,7 +7,8 @@ test('settings pages only submit current fields and retain asset references',()=
  assert.equal(settingsPayload(form,'old','brand').basic.logo,undefined)
  assert.equal(settingsPayload(form,'old','brand').basic.icon,'')
  assert.deepEqual(settingsPayload(form,'old','performance'),{gateway:{max_concurrency:10}})
- assert.deepEqual(settingsPayload(form,'old','smart'),{governance:{smart_route_enabled:true}})
+ assert.deepEqual(settingsPayload(form,'old','smart'),{})
+ assert.deepEqual(settingsPayload(form,'old','compliance'),{})
  assert.deepEqual(settingsPayload(form,'old','audit'),{})
 })
 test('settings save preserves later edits and other tab drafts',()=>{

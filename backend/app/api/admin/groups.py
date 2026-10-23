@@ -25,7 +25,7 @@ async def group_data(db,group):
 @router.get('/model-group-options')
 async def model_options(actor: User=Depends(administrator),db: AsyncSession=Depends(get_session)):
     rows=(await db.scalars(select(ModelGroup).order_by(ModelGroup.id))).all()
-    return {'data':[{'id':r.id,'name':r.name,'status':r.status} for r in rows]}
+    return {'data':[{'id':r.id,'name':r.name,'status':r.status,'protocol_type':r.protocol_type} for r in rows]}
 
 
 @router.get('/user-groups')

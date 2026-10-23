@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import {useAuth} from '../stores/auth'
+import GovernanceSwitch from '../components/GovernanceSwitch.vue'
 import ManagementTabs from '../components/ManagementTabs.vue'
 import {computed,reactive,ref,watch,onUnmounted} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
@@ -6,18 +8,21 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,message} from '../api/client'
 import {formatDate} from '../ui/branding'
 const route=useRoute(),router=useRouter(),view=computed(()=>route.path.split('/').pop()||'words')
-const tabs={words:'敏感词',samples:'审核样本',policies:'策略组',logs:'审核日志'}
+const auth=useAuth(),tabRevision=ref(0)
+async function changeTab(name:string){try{await router.push('/admin/compliance/'+name)}finally{tabRevision.value++}}
+const tabs=computed<Record<string,string>>(()=>({words:'敏感词',samples:'审核样本',policies:'策略组',logs:'审核日志',...(auth.user?.role==='super_admin'?{configuration:'功能配置'}:{})}))
 const label:Record<string,string>={low:'低',medium:'中',high:'高',critical:'严重',enabled:'启用',disabled:'禁用',not_built:'未构建',pending:'排队中',processing:'构建中',ready:'已就绪',stale:'版本过期',failed:'构建失败',audit:'仅审计',block:'拦截',pass:'通过',word:'关键词',sample:'审核样本',text:'文本',wildcard:'通配符',regex:'正则',chat:'OpenAI Completions',messages:'Anthropic Messages',responses:'OpenAI Responses',embeddings:'Embeddings',images:'Images',rerank:'Rerank'}
 const rows=ref<any[]>([]),policies=ref<any[]>([]),words=ref<any[]>([]),samples=ref<any[]>([]),groups=ref<any[]>([]),models=ref<any[]>([])
 const loading=ref(false),saving=ref(false),building=ref(false),error=ref(''),page=ref(1),total=ref(0),selected=ref<number[]>([]),remoteVectors=ref(false),dialog=ref(false),editing=ref<number|null>(null),detail=ref<any>(null),importing=ref(false),busy=reactive<Record<number,boolean>>({})
 const filters=reactive({q:'',policy_id:undefined as number|undefined,status:'',vector_status:'',action:'',risk:'',source:'',request_id:String(route.query.request_id||'')})
 const days=ref(7),range=ref<[Date,Date]|null>(null)
-const blank=()=>({pattern:'',kind:'text',risk:'medium' as string|null,status:'enabled',remark:'',text:'',name:'',action:'audit',description:'',policy_id:undefined as number|undefined,word_ids:[] as number[],sample_ids:[] as number[],group_ids:[] as number[],models:[] as string[],threshold:.85})
+const blank=()=>({pattern:'',kind:'text',risk:'medium' as string|null,status:'enabled',remark:'',text:'',name:'',action:'audit',description:'',policy_id:undefined as number|undefined,word_ids:[] as number[],sample_ids:[] as number[],group_ids:[] as number[],models:[] as string[],threshold:.85,expected_version:undefined as string|undefined})
 const form=reactive(blank()),importForm=reactive({policy_id:undefined as number|undefined,lines:'',status:'enabled'})
 const complianceEnabled=ref(true),globalThreshold=ref<number|null>(null)
 let generation=0
+let readRequest:AbortController|undefined
 async function load(){
- const mine=++generation;loading.value=true;error.value=''
+ const mine=++generation;readRequest?.abort();const request=new AbortController();readRequest=request;error.value='';if(view.value==='configuration'){loading.value=false;return}loading.value=true
  try{
   const params:any={page:page.value,q:filters.q||undefined}
   if(view.value==='words'||view.value==='samples'){params.page_size=20;params.policy_id=filters.policy_id;if(view.value==='samples'){params.enabled=filters.status||undefined;params.status=filters.vector_status||undefined}else params.status=filters.status||undefined}
@@ -26,16 +31,17 @@ async function load(){
    Object.assign(params,{request_id:filters.request_id||undefined,action:filters.action||undefined,risk:filters.risk||undefined,source:filters.source||undefined,policy_id:filters.policy_id})
    const end=range.value?.[1]||new Date(),start=range.value?.[0]||new Date(end.getTime()-days.value*86400000);params.start=start.toISOString();params.end=end.toISOString()
   }
-  const [result,options,groupOptions]=await Promise.all([api.get('/admin/compliance/'+view.value,{params}),view.value==='policies'?Promise.resolve(null):api.get('/admin/compliance/policies'),view.value==='policies'?api.get('/admin/user-group-options'):Promise.resolve(null)])
+  const [result,options,groupOptions]=await Promise.all([api.get('/admin/compliance/'+view.value,{params,signal:request.signal}),view.value==='policies'?Promise.resolve(null):api.get('/admin/compliance/policies',{signal:request.signal}),view.value==='policies'?api.get('/admin/user-group-options',{signal:request.signal}):Promise.resolve(null)])
   if(mine!==generation)return
   if(groupOptions)groups.value=groupOptions.data.data.items||groupOptions.data.data
   const governance=(options||result).data.data;complianceEnabled.value=governance.compliance_enabled!==false;globalThreshold.value=governance.semantic_threshold??null
   const data=result.data.data;rows.value=data.items;total.value=data.total??data.items.length;policies.value=options?.data.data.items||data.items;selected.value=[]
+  if(view.value!=='policies'&&page.value>1&&!data.items.length){page.value=Math.max(1,Math.ceil(total.value/20));await load();return}
   if(view.value==='samples')remoteVectors.value=String(data.model_version||'').startsWith('upstream:')
- }catch(e){if(mine===generation)error.value=message(e)}finally{if(mine===generation)loading.value=false}
+ }catch(e){if(mine===generation&&!request.signal.aborted)error.value=message(e)}finally{if(mine===generation)loading.value=false}
 }
 async function open(row?:any){
- editing.value=row?.id||null;Object.assign(form,blank(),row||{})
+ editing.value=row?.id||null;Object.assign(form,blank(),row||{});form.expected_version=row?.version
  form.word_ids=[...(row?.word_ids||[])];form.sample_ids=[...(row?.sample_ids||[])];form.group_ids=[...(row?.group_ids||[])];form.models=[...(row?.models||[])]
  form.policy_id=row?.policies?.length===1?row.policies[0].id:undefined
  if(view.value==='policies'){
@@ -56,6 +62,7 @@ async function save(){
   if(view.value==='words')body={pattern:form.pattern,kind:form.kind,risk:form.risk||'medium',status:form.status,remark:form.remark}
   else if(view.value==='samples')body={text:form.text,risk:form.risk||'medium',status:form.status,remark:form.remark,build_vector:false}
   else body={name:form.name,action:form.action,risk:form.risk,description:form.description,status:form.status,word_ids:form.word_ids,sample_ids:form.sample_ids,group_ids:form.group_ids,models:form.models,threshold:form.threshold}
+  if(editing.value)body.expected_version=form.expected_version
   if(view.value!=='policies'&&form.policy_id)body.policy_id=form.policy_id
   await api[editing.value?'put':'post']('/admin/compliance/'+view.value+(editing.value?'/'+editing.value:''),body)
   ElMessage.success(view.value==='samples'?'已保存；新增或修改文本后请构建向量':'已保存');dialog.value=false;await load()
@@ -63,7 +70,7 @@ async function save(){
 }
 async function toggle(row:any,value:any){
  busy[row.id]=true
- try{await api.patch('/admin/compliance/'+view.value+'/'+row.id+'/status',{status:value?'enabled':'disabled'});row.status=value?'enabled':'disabled';ElMessage.success('状态已更新')}
+ try{const updated=(await api.patch('/admin/compliance/'+view.value+'/'+row.id+'/status',{status:value?'enabled':'disabled',expected_version:row.version})).data.data;Object.assign(row,updated);ElMessage.success('状态已更新')}
  catch(e){ElMessage.error(message(e))}finally{busy[row.id]=false}
 }
 async function remove(row:any){
@@ -93,16 +100,18 @@ function sourceNames(row:any){return [...new Set((row.matches||[]).flatMap((m:an
 function groupNames(ids:number[]){return ids.map(i=>groups.value.find(g=>g.id===i)?.name||'#'+i).join('、')||'全部'}
 function reset(reload=true){Object.assign(filters,{q:'',policy_id:undefined,status:'',vector_status:'',action:'',risk:'',source:'',request_id:''});range.value=null;days.value=7;page.value=1;if(reload)load()}
 watch(()=>route.fullPath,()=>{rows.value=[];total.value=0;selected.value=[];dialog.value=false;detail.value=null;reset(false);filters.request_id=String(route.query.request_id||'');load()},{immediate:true})
-const timer=window.setInterval(()=>{if(view.value==='samples'&&!dialog.value&&!loading.value&&!building.value&&!selected.value.length)load()},5000)
-onUnmounted(()=>{clearInterval(timer);generation++})
+const timer=window.setInterval(()=>{if(view.value==='samples'&&!document.hidden&&!dialog.value&&!importing.value&&!loading.value&&!saving.value&&!building.value&&!selected.value.length)load()},5000)
+onUnmounted(()=>{clearInterval(timer);generation++;readRequest?.abort()})
 </script>
 <template>
  <div class="compliance-page module-page">
   <PageHeader title="内容合规"/>
-  <el-alert v-if="!complianceEnabled" title="内容合规总开关已关闭，当前策略不会执行。请在系统设置的内容合规中启用。" type="warning" :closable="false" class="gap"/>
+  <el-alert v-if="!complianceEnabled" title="内容合规总开关已关闭，当前策略不会执行。请由超级管理员使用“功能配置”标签页启用。" type="warning" :closable="false" class="gap"/>
   <el-alert v-if="error" :title="error" type="error" :closable="false" class="gap"/>
   <div class="panel module-panel">
-   <ManagementTabs :value="view" :items="tabs" @change="router.push('/admin/compliance/'+$event)"/>
+   <ManagementTabs :key="tabRevision" :value="view" :items="tabs" @change="changeTab"/>
+<GovernanceSwitch v-if="view==='configuration'" embedded field="compliance_enabled" title="内容合规总开关" description="开启后依据启用策略执行审核或阻断；关闭不删除策略和样本。" @changed="load"/>
+<template v-else>
    <div class="toolbar module-filters">
     <el-select v-if="view!=='policies'" v-model="filters.policy_id" clearable filterable placeholder="全部策略组" class="filter"><el-option v-for="p in policies" :key="p.id" :label="p.name" :value="p.id"/></el-select>
     <el-select v-if="view!=='logs'" v-model="filters.status" clearable placeholder="全部状态" class="filter"><el-option label="启用" value="enabled"/><el-option label="禁用" value="disabled"/></el-select>
@@ -119,10 +128,10 @@ onUnmounted(()=>{clearInterval(timer);generation++})
     <el-button type="primary" :loading="loading" @click="page=1;load()">查询</el-button><el-button @click="reset">重置</el-button>
    </div>
    <div v-if="view!=='logs'" class="toolbar module-actions">
-    <el-button type="primary" @click="open()">添加{{tabs[view as keyof typeof tabs]}}</el-button>
+    <el-button type="primary" @click="open()">添加{{tabs[view]}}</el-button>
     <el-button v-if="view==='words'" :disabled="!policies.length" @click="importForm.policy_id=undefined;importForm.lines='';importing=true">批量导入</el-button>
     <template v-if="view==='samples'"><el-button :loading="building" :disabled="!selected.length" @click="build(false)">构建选中向量</el-button><el-button :loading="building" :disabled="!total" @click="build(true)">构建全部向量</el-button></template>
-    <span v-if="(view==='words'||view==='samples')&&!policies.length" class="muted">请先创建策略组，再添加{{tabs[view as keyof typeof tabs]}}。</span>
+    <span v-if="(view==='words'||view==='samples')&&!policies.length" class="muted">请先创建策略组，再添加{{tabs[view]}}。</span>
    </div>
    <el-alert v-if="view==='samples'" type="info" :closable="false" :title="(remoteVectors?'使用系统设置中的共享向量服务；构建向量可能产生费用。':'使用本地向量服务。')+'样本每个非空行始终参与原文匹配；语义检测需向量就绪且版本一致。修改文本或更换向量模型后请重新构建。'" class="gap module-note"/>
    <el-table :data="rows" v-loading="loading" @selection-change="(list:any[])=>selected=list.map(r=>r.id)" row-key="id" empty-text="暂无记录">
@@ -161,10 +170,11 @@ onUnmounted(()=>{clearInterval(timer);generation++})
      <el-button v-if="view==='logs'" link type="primary" @click="detail=row">查看</el-button>
      <template v-else><el-button link type="primary" @click="open(row)">编辑</el-button><el-button v-if="view==='samples'" link type="primary" :disabled="['pending','processing'].includes(row.vector_status)" @click="build(false,[row.id])">构建向量</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template>
     </template></el-table-column>
-   <template #empty><EmptyState :title="'暂无'+tabs[view as keyof typeof tabs]" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
+   <template #empty><EmptyState :title="'暂无'+tabs[view]" description="检查筛选条件、时间范围或相关配置后重试。"/></template></el-table>
    <el-pagination v-if="view!=='policies'" v-model:current-page="page" :total="total" :page-size="20" layout="total, prev, pager, next" @current-change="load" class="pagination"/>
+</template>
   </div>
-  <el-drawer v-model="dialog" :title="(editing?'编辑':'添加')+tabs[view as keyof typeof tabs]" size="660px" destroy-on-close>
+  <el-drawer v-model="dialog" :title="(editing?'编辑':'添加')+tabs[view]" size="660px" destroy-on-close>
    <el-form label-position="top">
     <template v-if="view!=='policies'">
      <el-form-item label="策略组" :required="!editing"><el-select v-model="form.policy_id" filterable placeholder="选择所属策略组" style="width:100%"><el-option v-for="p in policies" :key="p.id" :value="p.id" :label="p.name+' · '+label[p.status]"/></el-select></el-form-item>

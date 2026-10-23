@@ -15,12 +15,13 @@ from app.gateway.request_id import generate
 
 async def authorize(db,ctx,cfg):
     groups=await allowed_groups(db,ctx.group.id);ids={group.id for group in groups}
-    if not {cfg.simple_model_group,cfg.complex_model_group}.issubset(ids):
-        raise APIError(403,'ROUTE_GROUP_FORBIDDEN','用户组需同时授权简单和复杂目标模型组')
+    from app.services.model_decision import groups as target_groups
+    if not target_groups(cfg).issubset(ids):
+        raise APIError(403,'ROUTE_GROUP_FORBIDDEN','用户组需授权当前模式的全部目标及兜底模型组')
     if ctx.group.model_access=='all':return
     names=set((await db.scalars(select(ModelGroupModel.logical_model).where(ModelGroupModel.model_group_id.in_(ids)))).all())
-    if cfg.embedding_model not in names or cfg.virtual_model not in names:
-        raise APIError(403,'ROUTE_MODEL_FORBIDDEN','用户组需授权虚拟模型和Embedding模型')
+    if (cfg.route_mode=='vector' and cfg.embedding_model not in names) or cfg.virtual_model not in names:
+        raise APIError(403,'ROUTE_MODEL_FORBIDDEN','用户组需授权虚拟模型；本地/向量模式还需授权Embedding模型')
 
 
 def prompt(ctx):
@@ -58,7 +59,8 @@ async def route(db,ctx):
     if not cfg:
         ctx.deferred['smart_routing']='not_applicable';return ctx.logical_model
     started=monotonic();ctx.original_model=ctx.logical_model;ctx.route_config_id=cfg.id
-    snapshot={name:getattr(cfg,name) for name in ('id','virtual_model','embedding_model','vector_generation','simple_model_group','complex_model_group','top_k','similarity_threshold','confidence_gap','fallback','status')}
+    if cfg.route_mode=='model':return await model_route(db,ctx,cfg,started)
+    snapshot={name:getattr(cfg,name) for name in ('id','virtual_model','route_mode','embedding_model','vector_generation','simple_model_group','complex_model_group','top_k','similarity_threshold','confidence_gap','fallback','status')}
     evidence=[];classification=None;similarity=None;confidence=None;source='error';text=None;status='failed';reason=None;embedding_id=None;selected=None;group_name=None;selected_model=None
     try:
         if cfg.status!='enabled':raise APIError(503,'ROUTE_DISABLED','虚拟模型路由已禁用')
@@ -131,3 +133,40 @@ async def vector_decision(db,ctx,cfg,snapshot,text):
         raise APIError(409,'ROUTE_CHANGED','向量请求期间模型选择配置已变化，请重新请求')
     await authorize(db,ctx,cfg)
     return await nearest(db,cfg,embedding_value(result)),child.state.request_id,cfg
+
+
+async def model_route(db,ctx,cfg,started):
+    from app.services.model_decision import decide,provider_model
+    from app.api.admin.smart_route import real_members
+    ident,virtual,top_k=cfg.id,cfg.virtual_model,cfg.top_k
+    model_name=provider_model(cfg)
+    selected=None;target=None;confidence=None;evidence=[];reason=None;decision_id=None;selected_model=None;group_name=None;text=None;status='failed'
+    try:
+        if cfg.status!='enabled':raise APIError(503,'ROUTE_DISABLED','虚拟模型路由已禁用')
+        if ctx.operation not in ('chat','messages','responses','preflight'):raise APIError(400,'MODEL_TYPE_UNSUPPORTED','虚拟模型仅支持文本接口')
+        await authorize(db,ctx,cfg)
+        if ctx.operation=='preflight':selected=cfg.decision_fallback_group;reason='ROUTE_PREFLIGHT_NO_INFERENCE';target='兜底';status='fallback'
+        else:
+            text=prompt(ctx)
+            cfg,selected,target,confidence,evidence,reason,decision_id=await decide(db,ctx.request,cfg,text,ctx.user,ctx)
+            status='fallback' if reason else 'classified'
+        group,members=await real_members(db,selected,ctx.operation);group_name=group.name
+        ctx.route_group_id=selected;ctx.logical_model=selected_model=members[0]
+        ctx.deferred['smart_routing']={'status':status,'source':'model','selected_model_group':selected,'decision_target':target,
+            'decision_model':model_name,'decision_request_id':decision_id or ctx.deferred.get('_selection_decision_id'),'reason':reason,'confidence':confidence,'request_id':ctx.request_id}
+        return ctx.logical_model
+    except BaseException as error:
+        status='failed';reason=error.detail['code'] if isinstance(error,APIError) else 'ROUTE_MODEL_INTERRUPTED'
+        ctx.deferred['smart_routing']={'status':status,'source':'model','reason':reason,'decision_request_id':ctx.deferred.get('_selection_decision_id')}
+        raise
+    finally:
+        decision_id=decision_id or ctx.deferred.pop('_selection_decision_id',None)
+        if db.in_transaction():db.expunge_all();await db.rollback()
+        if ctx.operation!='preflight':
+            import anyio
+            with anyio.CancelScope(shield=True):
+                from app.services.route_decisions import write
+                await write(dict(request_id=ctx.request_id,config_id=ident,virtual_model=virtual,top_k=top_k,similarity=None,
+                    classification=None,source='model',request_kind='real',normalized_text=text,confidence=confidence,selected_model=selected_model,
+                    selected_model_group=selected,selected_group_name=group_name,status=status,reason=reason,evidence=evidence,
+                    decision_model=model_name,decision_target=target,decision_request_id=decision_id,elapsed_ms=round((monotonic()-started)*1000,2)))

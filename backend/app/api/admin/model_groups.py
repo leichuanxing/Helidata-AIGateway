@@ -57,7 +57,8 @@ async def save(db,actor,request,body,row=None):
             if name not in found:db.add(LogicalModel(name=name,model_type={'text':'text','multimodal':'multimodal','image':'image','vector':'embedding'}[category]))
     if row:
         from app.models.routing import RouteConfig
-        referenced=bool(await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==row.id)|(RouteConfig.complex_model_group==row.id)).limit(1)))
+        from app.services.model_decision import groups as route_groups
+        referenced=any(row.id in route_groups(cfg,True) for cfg in (await db.scalars(select(RouteConfig))).all())
         if referenced:
             if category not in (None,'text','multimodal'):
                 raise APIError(409,'MODEL_GROUP_IN_USE','智能路由引用的分组必须保持文本或多模态对话类型')
@@ -101,7 +102,8 @@ async def edit(group_id: int,body: ModelGroupInput,request: Request,actor=Depend
 async def remove(group_id: int,request: Request,actor=Depends(administrator),db=Depends(get_session)):
     await config_lock(db);row=await target(db,group_id,True)
     from app.models.routing import RouteConfig
-    if await db.scalar(select(RouteConfig.id).where((RouteConfig.simple_model_group==group_id)|(RouteConfig.complex_model_group==group_id)).limit(1)):
+    from app.services.model_decision import groups as route_groups
+    if any(group_id in route_groups(cfg,True) for cfg in (await db.scalars(select(RouteConfig))).all()):
         raise APIError(409,'MODEL_GROUP_IN_USE','模型组已被智能路由引用，请先修改路由配置')
     if await db.scalar(select(UserGroupModelGroup.user_group_id).where(UserGroupModelGroup.model_group_id==group_id).limit(1)):
         raise APIError(409,'MODEL_GROUP_IN_USE','模型组已授权给用户组，请先取消关联')

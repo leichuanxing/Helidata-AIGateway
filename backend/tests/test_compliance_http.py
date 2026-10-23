@@ -28,6 +28,12 @@ class ComplianceHTTPTests(unittest.IsolatedAsyncioTestCase):
    p=await api('POST','policies',{'name':name,'status':'enabled','action':'block','threshold':0,'models':[name]})
    pid=p['id']
    word=await api('POST','words',{'pattern':'forbidden-'+name,'kind':'text','policy_id':pid,'risk':'high'})
+   changed=await api('PATCH','words/'+str(word['id'])+'/status',{'status':'disabled','expected_version':word['version']})
+   await api('PUT','words/'+str(word['id']),{'pattern':'stale-edit','policy_id':pid,'expected_version':word['version']},409)
+   await api('PATCH','words/'+str(word['id'])+'/status',{'status':'enabled','expected_version':changed['version']})
+   fresh=next(x for x in (await api('GET','policies'))['items'] if x['id']==pid)
+   updates=await asyncio.gather(*[client.put('/api/admin/compliance/policies/'+str(pid),json={'name':name,'description':desc,'expected_version':fresh['version']}) for desc in ('first','second')])
+   self.assertEqual(sorted(r.status_code for r in updates),[200,409])
    await api('POST','words',{'pattern':'[','kind':'regex','policy_id':pid},400)
    imported=await api('POST','words/import',{'policy_id':pid,'lines':'repeat-'+name+'\nrepeat-'+name+'\nforbidden-'+name})
    self.assertEqual(imported,{'created':1,'skipped':1})

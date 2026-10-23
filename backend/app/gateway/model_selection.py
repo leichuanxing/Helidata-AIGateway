@@ -15,7 +15,8 @@ async def routes(db,ctx):
         from app.gateway.smart_routing import authorize
         from app.api.admin.smart_route import real_members
         cfg=await db.get(RouteConfig,ctx.route_config_id)
-        if not cfg or cfg.status!='enabled' or cfg.virtual_model!=ctx.original_model or ctx.route_group_id not in (cfg.simple_model_group,cfg.complex_model_group):
+        from app.services.model_decision import groups as route_groups
+        if not cfg or cfg.status!='enabled' or cfg.virtual_model!=ctx.original_model or ctx.route_group_id not in route_groups(cfg):
             raise APIError(409,'ROUTE_CHANGED','路由规则已变化')
         await authorize(db,ctx,cfg)
         group,names=await real_members(db,ctx.route_group_id,ctx.operation)

@@ -21,7 +21,7 @@ def contribution(record):
 
 
 async def accumulate(db,record):
-    if record['operation'] not in ('chat','responses','messages','embeddings','rerank','images'):return
+    if record['operation'] not in ('chat','responses','messages','embeddings','rerank','images','decision'):return
     dims={k:record.get(k) or (0 if k.endswith('_id') else '') for k in DIMS}
     values={**dims,**contribution(record)}
     date=record['created_at'].astimezone(ZONE)
@@ -57,7 +57,7 @@ def source_query(start,end,grain,filters):
     projection='bucket,'+','.join(DIMS+COUNTERS)
     aggregate=f"SELECT {projection} FROM usage_hourly WHERE bucket>=:lo AND bucket<:hi"
     if grain=="day":aggregate=f"SELECT {projection} FROM usage_daily WHERE bucket>=:day_lo AND bucket<:day_hi UNION ALL SELECT {projection} FROM usage_hourly WHERE bucket>=:lo AND bucket<:hi AND (bucket<:day_lo OR bucket>=:day_hi)"
-    cte=f"WITH source AS ({aggregate} UNION ALL SELECT {log_projection()} FROM call_logs WHERE operation IN ('chat','responses','messages','embeddings','rerank','images') AND created_at>=:start AND created_at<least(:lo,:end) UNION ALL SELECT {log_projection()} FROM call_logs WHERE operation IN ('chat','responses','messages','embeddings','rerank','images') AND created_at>=greatest(:hi,:lo,:start) AND created_at<:end), filtered AS (SELECT * FROM source WHERE {where}) "
+    cte=f"WITH source AS ({aggregate} UNION ALL SELECT {log_projection()} FROM call_logs WHERE operation IN ('chat','responses','messages','embeddings','rerank','images','decision') AND created_at>=:start AND created_at<least(:lo,:end) UNION ALL SELECT {log_projection()} FROM call_logs WHERE operation IN ('chat','responses','messages','embeddings','rerank','images','decision') AND created_at>=greatest(:hi,:lo,:start) AND created_at<:end), filtered AS (SELECT * FROM source WHERE {where}) "
     return cte,params
 
 

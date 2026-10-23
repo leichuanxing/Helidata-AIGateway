@@ -1,5 +1,5 @@
 """Administrator-only compliance management and immutable audit evidence."""
-import hashlib
+import hashlib,json
 from datetime import datetime,timedelta,timezone
 from typing import Literal
 from fastapi import APIRouter,Depends,Query,Request
@@ -16,11 +16,13 @@ from app.services.vector_service import version
 from app.services.sessions import audit
 router=APIRouter(prefix='/api/admin/compliance',tags=['内容合规'])
 class Input(BaseModel):model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
-class SourceInput(Input):
+class VersionedInput(Input):
+ expected_version:str|None=Field(default=None,pattern=r'^[0-9a-f]{64}$')
+class SourceInput(VersionedInput):
  risk:Literal['low','medium','high']='medium'
  status:Literal['enabled','disabled']='enabled'
  remark:str=Field(default='',max_length=2000)
- policy_id:int|None=Field(default=None,gt=0)
+ policy_id:int|None=Field(default=None,gt=0,strict=True)
 class WordInput(SourceInput):
  pattern:str=Field(min_length=1,max_length=256)
  kind:Literal['text','wildcard','regex']='text'
@@ -28,7 +30,7 @@ class SampleInput(SourceInput):
  text:str=Field(min_length=1,max_length=2000)
  build_vector:bool=False
  consent:bool=False
-class PolicyInput(Input):
+class PolicyInput(VersionedInput):
  name:str=Field(min_length=1,max_length=80)
  action:Literal['audit','block']='audit'
  risk:Literal['low','medium','high']|None=None
@@ -49,9 +51,9 @@ class PolicyInput(Input):
  def names(cls,v):
   if any(not i.strip() or len(i)>100 for i in v) or len(set(v))!=len(v):raise ValueError('模型名无效或重复')
   return v
-class StateInput(Input):status:Literal['enabled','disabled']
+class StateInput(VersionedInput):status:Literal['enabled','disabled']
 class ImportInput(Input):
- policy_id:int=Field(gt=0)
+ policy_id:int=Field(gt=0,strict=True)
  lines:str=Field(min_length=1,max_length=128000)
  status:Literal['enabled','disabled']='enabled'
 class BuildInput(Input):
@@ -61,7 +63,13 @@ class BuildInput(Input):
  @field_validator('ids',mode='before')
  @classmethod
  def valid_ids(cls,v):return PolicyInput.ids(v)
-def public(r):return {c.name:getattr(r,c.name) for c in r.__table__.columns}
+def public(r):
+ value={c.name:getattr(r,c.name) for c in r.__table__.columns}
+ value['version']=hashlib.sha256(json.dumps(value,sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()
+ return value
+def check_version(body,r):
+ if body.expected_version is not None and body.expected_version!=public(r)['version']:
+  raise APIError(409,'COMPLIANCE_CHANGED','审核配置已被修改，请重新加载后再保存')
 async def lock(db):await db.execute(text('SELECT pg_advisory_xact_lock(71017)'))
 async def row(db,model,ident):
  r=await db.get(model,ident)
@@ -125,11 +133,12 @@ async def import_words(body:ImportInput,request:Request,actor=Depends(administra
 @router.post('/words')
 async def add_word(body:WordInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
  validate_pattern(body.kind,body.pattern);await lock(db);await limit(db,AuditWord,500)
- r=AuditWord(**body.model_dump(exclude={'policy_id'}));db.add(r);await assign(db,r,body.policy_id,'word_ids');return await finish(db,r,actor,request,'create_audit_word')
+ r=AuditWord(**body.model_dump(exclude={'expected_version','policy_id'}));db.add(r);await assign(db,r,body.policy_id,'word_ids');return await finish(db,r,actor,request,'create_audit_word')
 @router.put('/words/{ident}')
 async def edit_word(ident:int,body:WordInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
  validate_pattern(body.kind,body.pattern);await lock(db);r=await row(db,AuditWord,ident)
- for k,v in body.model_dump(exclude={'policy_id'}).items():setattr(r,k,v)
+ check_version(body,r)
+ for k,v in body.model_dump(exclude={'expected_version','policy_id'}).items():setattr(r,k,v)
  if 'policy_id' in body.model_fields_set:await assign(db,r,body.policy_id,'word_ids')
  return await finish(db,r,actor,request,'update_audit_word')
 @router.get('/samples')
@@ -153,7 +162,7 @@ async def build_samples(body:BuildInput,request:Request,actor=Depends(administra
 async def add_sample(body:SampleInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
  if body.build_vector and version().startswith('upstream:') and not body.consent:raise APIError(400,'VECTOR_CONSENT_REQUIRED','构建上游向量可能产生费用，请明确确认')
  await lock(db);await limit(db,AuditSample,500)
- r=AuditSample(**body.model_dump(exclude={'build_vector','policy_id','consent'}),text_hash=hashlib.sha256(body.text.encode()).hexdigest(),vector_status='pending' if body.build_vector else 'not_built')
+ r=AuditSample(**body.model_dump(exclude={'expected_version','build_vector','policy_id','consent'}),text_hash=hashlib.sha256(body.text.encode()).hexdigest(),vector_status='pending' if body.build_vector else 'not_built')
  db.add(r)
  try:await assign(db,r,body.policy_id,'sample_ids')
  except IntegrityError:await db.rollback();raise APIError(409,'COMPLIANCE_DUPLICATE','样本文本重复') from None
@@ -163,8 +172,9 @@ async def edit_sample(ident:int,body:SampleInput,request:Request,actor=Depends(a
  if body.build_vector and version().startswith('upstream:') and not body.consent:raise APIError(400,'VECTOR_CONSENT_REQUIRED','构建上游向量可能产生费用，请明确确认')
  await lock(db);r=await db.scalar(select(AuditSample).where(AuditSample.id==ident).with_for_update())
  if not r:raise APIError(404,'COMPLIANCE_NOT_FOUND','审核样本不存在')
+ check_version(body,r)
  changed=r.text!=body.text
- for k,v in body.model_dump(exclude={'policy_id','build_vector','consent'}).items():setattr(r,k,v)
+ for k,v in body.model_dump(exclude={'expected_version','policy_id','build_vector','consent'}).items():setattr(r,k,v)
  if changed or body.build_vector:
   r.text_hash=hashlib.sha256(body.text.encode()).hexdigest();r.revision+=1;r.vector_status='pending' if body.build_vector else 'not_built';r.vector_error=None;r.job_started_at=None
  if 'policy_id' in body.model_fields_set:
@@ -184,12 +194,13 @@ async def policies(actor=Depends(administrator),db=Depends(get_session),q:str=Qu
  return {'data':{'items':items,'total':len(items),'compliance_enabled':governance['compliance_enabled'],'semantic_threshold':governance['semantic_threshold']}}
 async def save_policy(body,request,actor,db,ident=None):
  await lock(db)
- if ident:r=await row(db,CompliancePolicy,ident)
+ if ident:
+  r=await row(db,CompliancePolicy,ident);check_version(body,r)
  else:await limit(db,CompliancePolicy,100);r=CompliancePolicy()
  for model,ids in ((AuditWord,body.word_ids),(AuditSample,body.sample_ids),(UserGroup,body.group_ids)):
   if ids and await db.scalar(select(func.count()).select_from(model).where(model.id.in_(ids)))!=len(ids):raise APIError(400,'COMPLIANCE_REFERENCE_INVALID','引用资源不存在')
  if body.models and await db.scalar(select(func.count()).select_from(LogicalModel).where(LogicalModel.name.in_(body.models)))!=len(body.models):raise APIError(400,'COMPLIANCE_REFERENCE_INVALID','引用模型不存在')
- values=body.model_dump(exclude_unset=bool(ident))
+ values=body.model_dump(exclude_unset=bool(ident),exclude={'expected_version'})
  for k,v in values.items():setattr(r,k,v)
  if not ident:db.add(r)
  return await finish(db,r,actor,request,'update_compliance_policy' if ident else 'create_compliance_policy')
@@ -199,7 +210,7 @@ async def add_policy(body:PolicyInput,request:Request,actor=Depends(administrato
 async def edit_policy(ident:int,body:PolicyInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):return await save_policy(body,request,actor,db,ident)
 @router.patch('/{resource}/{ident}/status')
 async def state(resource:Literal['words','samples','policies'],ident:int,body:StateInput,request:Request,actor=Depends(administrator),db=Depends(get_session)):
- await lock(db);r=await row(db,{'words':AuditWord,'samples':AuditSample,'policies':CompliancePolicy}[resource],ident);r.status=body.status
+ await lock(db);r=await row(db,{'words':AuditWord,'samples':AuditSample,'policies':CompliancePolicy}[resource],ident);check_version(body,r);r.status=body.status
  return await finish(db,r,actor,request,'toggle_compliance_'+resource)
 async def remove(model,ident,request,actor,db,source=None):
  await lock(db);r=await row(db,model,ident)

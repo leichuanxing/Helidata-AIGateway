@@ -67,6 +67,13 @@ async def catalog(db,user_group_id):
     from app.services.operations_settings import governance
     for cfg in virtual_rows:
         if not governance['smart_route_enabled'] or cfg.status!='enabled':continue
+        if cfg.route_mode=='model':
+            from app.services.model_decision import groups as route_groups,key_value
+            if not key_value(cfg) or not route_groups(cfg).issubset(set(ids)):continue
+            try:
+                for ident in route_groups(cfg):await real_members(db,ident)
+            except APIError:continue
+            available.add(cfg.virtual_model);continue
         if cfg.embedding_model not in available or not {cfg.simple_model_group,cfg.complex_model_group}.issubset(set(ids)):continue
         from app.services.vector_service import pin
         from app.providers.operations import compatible

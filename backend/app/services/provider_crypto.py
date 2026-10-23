@@ -41,9 +41,12 @@ def decrypt_secret(value):
 
 
 async def ensure_key():
+    from app.models.routing import RouteConfig
     if not KEY_PATH.exists():
         async with session_factory() as db:
             count=await db.scalar(select(func.count(Provider.id)).where(Provider.api_key_encrypted.is_not(None)))
+        async with session_factory() as db:count+=await db.scalar(select(func.count(RouteConfig.id)).where(RouteConfig.decision_key_encrypted.is_not(None)))
+        async with session_factory() as db:count+=await db.scalar(select(func.count(RouteConfig.id)).where(RouteConfig.aliyun_key_encrypted.is_not(None)))
         if count:
             raise RuntimeError('Provider encryption key missing; restore protected key backup before startup')
         with KEY_PATH.open('xb') as handle:
@@ -52,6 +55,8 @@ async def ensure_key():
     read_key()
     async with session_factory() as db:
         encrypted=(await db.scalars(select(Provider.api_key_encrypted).where(Provider.api_key_encrypted.is_not(None)))).all()
+        encrypted+=list((await db.scalars(select(RouteConfig.decision_key_encrypted).where(RouteConfig.decision_key_encrypted.is_not(None)))).all())
+        encrypted+=list((await db.scalars(select(RouteConfig.aliyun_key_encrypted).where(RouteConfig.aliyun_key_encrypted.is_not(None)))).all())
         for value in encrypted:
             decrypt_secret(value)
     await engine.dispose()

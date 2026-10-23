@@ -71,10 +71,10 @@ async def claim():
         # Recovery always advances revision so a late completion cannot overwrite a retry.
         await db.execute(update(RouteSample).where(RouteSample.vector_status=='processing',RouteSample.job_started_at<now()-timedelta(seconds=180))
                          .values(vector_status='pending',revision=RouteSample.revision+1,job_started_at=None,vector_request_id=None))
-        ident=await db.scalar(select(RouteSample.config_id).where(RouteSample.vector_status=='pending',RouteSample.vector_requested.is_(True)).order_by(RouteSample.id).limit(1))
+        ident=await db.scalar(select(RouteSample.config_id).join(RouteConfig,RouteConfig.id==RouteSample.config_id).where(RouteConfig.route_mode=='vector',RouteSample.vector_status=='pending',RouteSample.vector_requested.is_(True)).order_by(RouteSample.id).limit(1))
         if ident is None:return None
         config=await db.scalar(select(RouteConfig).where(RouteConfig.id==ident).with_for_update())
-        if not config:return None
+        if not config or config.route_mode!='vector':return None
         row=await db.scalar(select(RouteSample).where(RouteSample.config_id==ident,RouteSample.vector_status=='pending',RouteSample.vector_requested.is_(True)).order_by(RouteSample.id).limit(1).with_for_update(skip_locked=True))
         if not row:return None
         row.vector_status='processing';row.job_started_at=now();row.vector_request_id=generate()
